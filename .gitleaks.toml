@@ -1,0 +1,16 @@
+# The secret-scanning job's configuration: gitleaks' own rules, plus the fake
+# credentials the test suite needs by construction.
+#
+# Allowlisted by VALUE, not by path. Excluding test files would let a real
+# secret committed to a test go unseen; excluding these made-up strings lets
+# nothing else through. A value, not a line, so the allowlist also covers the
+# history the weekly scan reads.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Made-up passphrases and a documentation passkey in tests"
+regexes = [
+  '''^(invited|victim)-passphrase-\d$''',
+  '''^abc123def456$''',
+]

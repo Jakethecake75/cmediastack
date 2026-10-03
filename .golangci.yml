@@ -1,0 +1,55 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck      # unchecked errors, especially around Close and Write
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose     # leaked HTTP response bodies
+    - rowserrcheck  # sql.Rows.Err() forgotten after iteration
+    - sqlclosecheck # unclosed sql.Rows and sql.Stmt
+    - noctx         # HTTP requests without a context, which cannot be cancelled
+    - gosec
+    - misspell
+    - copyloopvar
+    - nilerr        # returning nil after checking an error is non-nil
+    - errorlint     # error comparison that breaks with wrapping
+
+  settings:
+    gosec:
+      excludes:
+        # G104 duplicates errcheck.
+        - G104
+    errcheck:
+      check-type-assertions: true
+    misspell:
+      # "hardlinked" is this software's word for a library file that shares its
+      # bytes with a seeding download (ADR-0014). misspell's dictionary knows
+      # only "hardline", and flagged every use of the word — 27 findings when
+      # this was added, none of them a misspelling.
+      ignore-rules:
+        - hardlinked
+        # Severance's Spanish title, folded as a release name folds it
+        # ("Separación" → "Separacion"): test data for a search term, not a
+        # misspelling of "separation".
+        - separacion
+
+  exclusions:
+    rules:
+      # Test files may ignore errors in setup and may hardcode credentials that
+      # are, by construction, not real.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

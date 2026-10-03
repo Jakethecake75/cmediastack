@@ -1,0 +1,4 @@
+# Everything is LF in the repository and in the working tree, whatever the
+# platform: the shell scripts run on Linux, and Go embeds some files verbatim.
+* text=auto eol=lf
+*.png binary

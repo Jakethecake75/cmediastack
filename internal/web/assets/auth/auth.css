@@ -1,0 +1,284 @@
+/* CMediaStack — anonymous bundle.
+ *
+ * Self-contained by design: this file shares nothing with the app bundle, so
+ * the boundary between the anonymous and authenticated surfaces cannot be
+ * eroded by an import. Hand-written; no framework, no third-party CSS.
+ */
+
+:root {
+  color-scheme: dark light;
+  --bg: #0e1116;
+  --surface: #161b22;
+  --line: #2a323d;
+  --text: #e6edf3;
+  --muted: #8b96a5;
+  --accent: #4c8dff;
+  --accent-ink: #ffffff;
+  --danger: #ff6b6b;
+  --ok: #5bd68a;
+  --warn: #ffc857;
+  --radius: 10px;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --line: #d8dee6;
+    --text: #1b2027;
+    --muted: #5b6673;
+    --accent: #1a5fd0;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+}
+
+.card.wide { max-width: 640px; }
+
+.brand {
+  margin: 0 0 20px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  text-align: center;
+}
+
+h2 { margin: 0 0 8px; font-size: 20px; }
+h3 { margin: 20px 0 8px; font-size: 15px; }
+
+label {
+  display: block;
+  margin: 16px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.optional { font-weight: 400; opacity: 0.7; }
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+textarea { resize: vertical; }
+
+input:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 10px 16px;
+}
+
+button[disabled] { opacity: 0.55; cursor: progress; }
+
+.primary {
+  width: 100%;
+  margin-top: 20px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.ghost {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--line);
+  padding: 6px 12px;
+}
+
+.link {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  text-decoration: underline;
+}
+
+.hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.error, .ok, .warn {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  border: 1px solid;
+}
+
+.error { color: var(--danger); border-color: var(--danger); }
+.ok { color: var(--ok); border-color: var(--ok); }
+.warn { color: var(--warn); border-color: var(--warn); }
+
+.footer-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.footer-links a, .footer-links button {
+  color: var(--muted);
+  width: auto;
+  margin: 0;
+}
+
+.noscript {
+  padding: 14px 16px;
+  background: var(--warn);
+  color: #1b2027;
+  font-size: 14px;
+}
+
+/* --- enrollment ------------------------------------------------------- */
+
+.steps { margin: 16px 0 0; padding-left: 20px; }
+.steps > li { margin-bottom: 14px; }
+
+.qr-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 14px 0 10px;
+}
+
+/* A white plate behind the code: a dark-mode page would otherwise invert the
+ * quiet zone, and many scanners refuse a code without one. */
+.qr-wrap img {
+  display: block;
+  width: 320px;
+  height: auto;
+  max-width: 100%;
+  padding: 10px;
+  background: #ffffff;
+  border-radius: 8px;
+}
+
+details#manual {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+details#manual summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.secret-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 6px;
+  flex-wrap: wrap;
+}
+
+.secret {
+  flex: 1 1 240px;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  word-break: break-all;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+.code-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.code-list li {
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 14px;
+  text-align: center;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.row .primary, .row .ghost { margin-top: 0; }
+
+[hidden] { display: none !important; }
+
+/* The offer of the source, on every page (ADR-0052). */
+footer.source {
+  text-align: center;
+  font-size: 0.75rem;
+  opacity: 0.7;
+  padding: 1.5rem 1rem 1rem;
+}

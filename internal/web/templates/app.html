@@ -1,0 +1,643 @@
+{{define "title"}}CMediaStack{{end}}
+{{define "content"}}
+<div class="app" id="app" hidden>
+  <header class="topbar">
+    <span class="brand-small">CMediaStack</span>
+    <nav id="nav" class="nav"></nav>
+    <span class="spacer"></span>
+    <span id="whoami" class="whoami"></span>
+    <button type="button" id="logout" class="ghost">Sign out</button>
+  </header>
+
+  <p id="error" class="error" hidden role="alert"></p>
+  <p id="notice" class="ok" hidden role="status"></p>
+
+  <main class="content">
+
+    <section class="view" data-view="overview" hidden>
+      <h2>Overview</h2>
+      <div class="grid" id="overview-cards"></div>
+      <h3>Finding your way</h3>
+      <p class="hint">
+        <strong>Library</strong> is what is on disk, and plays it;
+        <strong>Wanted</strong> is what is missing; <strong>Requests</strong> is
+        where you ask for something that is not here. The tabs you see are the
+        ones your role may use. <em>Libraries</em> above is how many of this
+        instance's libraries your account can see — all of them, or the ones an
+        administrator chose — and a title outside them does not appear anywhere.
+      </p>
+    </section>
+
+    <section class="view" data-view="library" hidden>
+      <h2>Library</h2>
+      <div class="toolbar">
+        <label for="library-kind">Show</label>
+        <select id="library-kind">
+          <option value="">Everything</option>
+          <option value="movie">Films</option>
+          <option value="series">Series</option>
+        </select>
+        <input id="library-filter" type="search" placeholder="Filter by title"
+               autocomplete="off" maxlength="200">
+        <span class="spacer"></span>
+        <span id="library-count" class="hint"></span>
+      </div>
+      <div id="library-list" class="list"></div>
+      <div id="library-detail" class="detail" hidden></div>
+    </section>
+
+    <section class="view" data-view="add" hidden>
+      <h2>Add to the library</h2>
+      <p class="hint">
+        Choose a series or a film from the metadata provider. Nothing is
+        downloaded and nothing is created on disk: its folder appears with the
+        first file imported into it. A series is added with every episode the
+        provider lists, and the ones you choose to want go on the Wanted list;
+        a film goes on the Wanted list itself. Each is then searched for from
+        its page or from Wanted, and whatever is grabbed there is filed under
+        it, whatever the release calls itself.
+      </p>
+      <div id="add-for" class="inline-note" hidden></div>
+      <form id="add-form" class="inline-form" autocomplete="off">
+        <label for="add-kind">Kind</label>
+        <select id="add-kind">
+          <option value="series">Series</option>
+          <option value="movie">Film</option>
+          <option value="artist">Artist (music)</option>
+          <option value="book">Book</option>
+        </select>
+        <label for="add-term">Title</label>
+        <input id="add-term" name="title" type="text" required maxlength="200"
+               placeholder="Title">
+        <label for="add-year">Year (optional)</label>
+        <input id="add-year" name="year" type="number" min="1900" max="2100">
+        <button type="submit" class="primary">Search the provider</button>
+      </form>
+      <div id="add-results" class="list"></div>
+    </section>
+
+    <section class="view" data-view="watch" hidden>
+      <h2 id="watch-title">Watch</h2>
+      <p id="watch-summary" class="hint"></p>
+      <div id="watch-blockers" class="list compact"></div>
+      <div class="player" id="watch-player" hidden>
+        <video id="watch-video" controls preload="metadata" playsinline></video>
+      </div>
+      <div id="watch-detail" class="detail" hidden></div>
+    </section>
+
+    <section class="view" data-view="identify" hidden>
+      <h2>Identify</h2>
+      <p class="hint">
+        What this instance could not work out on its own. It matches a title and
+        year exactly or it asks you &mdash; so anything here is genuinely
+        ambiguous, not merely untried. Confirming attaches the identification
+        and renames the library entry; nothing on disk is touched.
+      </p>
+      <div class="toolbar">
+        <span id="identify-count" class="hint"></span>
+        <span class="spacer"></span>
+        <button id="identify-run" type="button" class="ghost">Run a pass now</button>
+      </div>
+      <div id="identify-list" class="list"></div>
+    </section>
+
+    <section class="view" data-view="search" hidden>
+      <h2>Search</h2>
+      <p class="hint">
+        Every indexer is asked at once. Results the quality profile refused are
+        shown too, with the reason — &ldquo;why did it not grab anything&rdquo;
+        is the question this kind of software is worst at answering.
+      </p>
+      <form id="search-form" class="inline-form" autocomplete="off">
+        <label for="search-term">Title</label>
+        <input id="search-term" name="term" type="text" required maxlength="200"
+               placeholder="what to look for">
+
+        <label for="search-profile">Judged by</label>
+        <select id="search-profile" name="profile_id"></select>
+
+        <button type="submit" class="primary">Search</button>
+      </form>
+      <div id="search-default" class="inline-note" hidden></div>
+      <p id="search-warning" class="warn" hidden role="status"></p>
+      <div id="search-indexers" class="list compact"></div>
+      <div id="search-results" class="list"></div>
+    </section>
+
+    <section class="view" data-view="queue" hidden>
+      <h2>Queue</h2>
+      <div id="queue-notes" class="list compact"></div>
+      <div id="queue-list" class="list"></div>
+    </section>
+
+    <section class="view" data-view="storage" hidden>
+      <h2>Root folders</h2>
+      <p class="hint">
+        Where the library lives. A scan reads these and records what it finds —
+        it never renames, moves or deletes anything on disk.
+      </p>
+      <form id="root-form" class="inline-form" autocomplete="off">
+        <label for="root-path">Path</label>
+        <input id="root-path" name="path" type="text" required maxlength="1024"
+               placeholder="/media/movies">
+
+        <label for="root-kind">Holds</label>
+        <select id="root-kind" name="kind" required>
+          <option value="movies">Films</option>
+          <option value="series">Series</option>
+          <option value="music">Music</option>
+          <option value="books">Books</option>
+        </select>
+
+        <label for="root-label">Label</label>
+        <input id="root-label" name="label" type="text" maxlength="60"
+               placeholder="what you call it">
+
+        <button type="submit" class="primary">Add root folder</button>
+      </form>
+      <div id="roots-list" class="list"></div>
+
+      <h3>Trash</h3>
+      <p class="hint">
+        Deleted and superseded files wait here until they are purged. Until
+        then they can be put back.
+      </p>
+      <div id="trash-list" class="list"></div>
+    </section>
+
+    <section class="view" data-view="indexers" hidden>
+      <h2>Indexers</h2>
+      <p class="hint">
+        API keys are sealed with the instance key and are never returned over
+        HTTP — not even here. Leave the field blank when editing to keep the
+        existing key.
+      </p>
+      <form id="indexer-form" class="inline-form" autocomplete="off">
+        <label for="indexer-name">Name</label>
+        <input id="indexer-name" name="name" type="text" required maxlength="60">
+
+        <label for="indexer-url">Base URL</label>
+        <input id="indexer-url" name="base_url" type="url" required maxlength="500"
+               placeholder="https://indexer.example.com">
+
+        <label for="indexer-kind">Protocol</label>
+        <select id="indexer-kind" name="kind">
+          <option value="torznab">Torznab</option>
+          <option value="newznab">Newznab</option>
+          <option value="cardigann">Cardigann definition</option>
+        </select>
+
+        <label for="indexer-definition" class="cardigann-only" hidden>Definition (YAML)</label>
+        <textarea id="indexer-definition" name="definition" class="cardigann-only" hidden rows="8"
+                  maxlength="262144" spellcheck="false"
+                  placeholder="Paste a tracker's definition from Jackett's or Prowlarr's repository"></textarea>
+
+        <label for="indexer-username" class="cardigann-only" hidden>Tracker username (if it signs in)</label>
+        <input id="indexer-username" class="cardigann-only" hidden type="text" maxlength="200" autocomplete="off">
+        <label for="indexer-password" class="cardigann-only" hidden>Tracker password</label>
+        <input id="indexer-password" class="cardigann-only" hidden type="password" maxlength="200"
+               autocomplete="new-password">
+        <label for="indexer-cookie" class="cardigann-only" hidden>Or a signed-in cookie</label>
+        <input id="indexer-cookie" class="cardigann-only" hidden type="password" maxlength="4000"
+               autocomplete="off">
+
+        <label for="indexer-key">API key</label>
+        <input id="indexer-key" name="api_key" type="password" maxlength="200"
+               autocomplete="new-password">
+
+        <label for="indexer-ratio">Seed ratio</label>
+        <input id="indexer-ratio" name="seed_ratio" type="number" min="0" max="100"
+               step="0.1" value="0">
+
+        <label for="indexer-hours">Seed hours</label>
+        <input id="indexer-hours" name="seed_hours" type="number" min="0" max="8760" value="0">
+
+        <button type="submit" class="primary">Add indexer</button>
+      </form>
+      <div id="indexers-list" class="list"></div>
+    </section>
+
+    <section class="view" data-view="metadata" hidden>
+      <h2>Metadata provider</h2>
+      <p class="hint">
+        TMDB says what a series contains, what a film is called, and supplies
+        the artwork. Paste the <em>API Read Access Token</em> from TMDB's API
+        settings page. It is checked against TMDB before it is stored, sealed
+        with the instance key, and never shown again — not here, not anywhere.
+      </p>
+      <div id="metadata-status" class="list compact"></div>
+      <form id="metadata-form" class="inline-form" autocomplete="off">
+        <label for="metadata-token">Read Access Token</label>
+        <input id="metadata-token" name="token" type="password" maxlength="2000"
+               autocomplete="new-password" required>
+        <button type="submit" class="primary">Save and check</button>
+      </form>
+      <div id="metadata-actions" class="actions"></div>
+
+      <h3>Subtitles — OpenSubtitles</h3>
+      <p class="hint">
+        A file's subtitle is fetched from OpenSubtitles.com, which needs an API
+        key of your own: create one under <em>API consumers</em> in your
+        OpenSubtitles profile. An account's username and password may be added
+        too; signed in, an account gets more downloads a day. The key and the
+        password are sealed with the instance key and never shown again.
+        Languages are two-letter codes, like <em>en, fr</em>.
+      </p>
+      <div id="subtitles-status" class="list compact"></div>
+      <form id="subtitles-form" class="inline-form" autocomplete="off">
+        <label for="subtitles-key">API key (blank keeps it)</label>
+        <input id="subtitles-key" type="password" maxlength="200" autocomplete="new-password">
+        <label for="subtitles-user">Username (optional)</label>
+        <input id="subtitles-user" type="text" maxlength="200" autocomplete="off">
+        <label for="subtitles-password">Password (blank keeps it)</label>
+        <input id="subtitles-password" type="password" maxlength="200" autocomplete="new-password">
+        <label for="subtitles-languages">Languages</label>
+        <input id="subtitles-languages" type="text" maxlength="100" placeholder="en, fr">
+        <button type="submit" class="primary">Save</button>
+      </form>
+    </section>
+
+    <section class="view" data-view="notifications" hidden>
+      <h2>Notifications</h2>
+      <p class="hint">
+        What happens here, sent to a Discord channel: a flood of denials, a
+        password accepted with the wrong authenticator code, an account waiting
+        for approval, backups or the tunnel failing. In Discord, open the
+        channel's settings, then <em>Integrations</em> and <em>Webhooks</em>,
+        create a webhook and copy its link. The link is the key to posting in
+        your channel: it is checked with Discord before it is kept — a check
+        that posts nothing — stored sealed with the instance key, and never
+        shown again.
+      </p>
+      <div id="notifications-status" class="list compact"></div>
+      <form id="notifications-form" class="inline-form" autocomplete="off">
+        <label for="notifications-webhook">Webhook link</label>
+        <input id="notifications-webhook" name="url" type="password" maxlength="512"
+               autocomplete="new-password" required>
+        <button type="submit" class="primary">Save and check</button>
+      </form>
+      <div id="notifications-actions" class="actions"></div>
+      <h3>What is sent</h3>
+      <form id="notifications-categories" autocomplete="off">
+        <div id="notifications-category-list" class="list compact"></div>
+        <button type="submit">Save</button>
+      </form>
+    </section>
+
+    <section class="view" data-view="network" hidden>
+      <h2>Network</h2>
+      <p class="hint">
+        Where each subsystem's traffic goes, and whether the tunnel downloads
+        depend on is up. The policy is the configuration file's, changed there
+        and applied by a restart: nothing on this page can loosen it.
+      </p>
+      <div id="network-status" class="list compact"></div>
+      <div id="network-actions" class="actions"></div>
+      <div id="network-leak" class="list compact"></div>
+      <h3>Per subsystem</h3>
+      <div id="network-profiles" class="list compact"></div>
+    </section>
+
+    <section class="view" data-view="discover" hidden>
+      <h2>Discover</h2>
+      <p class="hint">
+        What is popular, from the metadata provider — the same for everybody,
+        refreshed every six hours. Ask for anything that is not here yet.
+      </p>
+      <label for="discover-section">Show</label>
+      <select id="discover-section">
+        <option value="trending">Trending this week</option>
+        <option value="popular-films">Popular films</option>
+        <option value="popular-series">Popular series</option>
+        <option value="upcoming-films">Films coming out</option>
+      </select>
+      <div id="discover-list" class="list"></div>
+    </section>
+
+    <section class="view" data-view="requests" hidden>
+      <h2>Requests</h2>
+      <form id="request-form" class="inline-form" autocomplete="off">
+        <h3>Ask for something</h3>
+
+        <label for="request-kind">Kind</label>
+        <select id="request-kind" name="kind" required>
+          <option value="movie">Film</option>
+          <option value="series">Series</option>
+        </select>
+
+        <label for="request-title">Title</label>
+        <input id="request-title" name="title" type="text" maxlength="200" required>
+
+        <label for="request-year">Year (optional, but it helps)</label>
+        <input id="request-year" name="year" type="number" min="1888" max="2100">
+
+        <label for="request-note">Note</label>
+        <input id="request-note" name="note" type="text" maxlength="500">
+
+        <button type="submit" class="primary">Request it</button>
+      </form>
+      <p class="hint" id="request-scope"></p>
+      <div id="requests-list" class="list"></div>
+
+      <h3>Problems reported</h3>
+      <p class="hint">
+        Something wrong with a title in the library — the sound, the subtitles,
+        the wrong film — is reported from its page. Yours are here, with the
+        answer when there is one.
+      </p>
+      <label class="checkbox"><input id="issues-all" type="checkbox"> Show resolved ones too</label>
+      <div id="issues-list" class="list"></div>
+    </section>
+
+    <section class="view" data-view="users" hidden>
+      <h2>Accounts</h2>
+      <p class="hint">
+        Suspending an account revokes its sessions, its API tokens and any
+        invites it issued, and takes effect on that account's next request.
+        Reactivating restores the access somebody had — an account that never
+        enrolled an authenticator goes back to <code>awaiting_mfa</code>, not
+        to active.
+      </p>
+
+      <form id="create-user-form" class="inline-form" autocomplete="off">
+        <h3>Create an account</h3>
+        <label for="create-username">Username</label>
+        <input id="create-username" type="text" minlength="3" maxlength="32" required>
+
+        <label for="create-email">Email</label>
+        <input id="create-email" type="email" maxlength="254" required>
+
+        <label for="create-role">Role</label>
+        <select id="create-role" required></select>
+
+        <div id="create-access"></div>
+
+        <p class="hint">You never learn their password: you get a link that sets
+          one, usable once, for three days. Then they sign in and enroll an
+          authenticator.</p>
+        <button type="submit" class="primary">Create account</button>
+      </form>
+      <div id="create-user-result" class="reveal" hidden></div>
+
+      <div id="users-list" class="list"></div>
+
+      <h3>Roles</h3>
+      <p class="hint">
+        What each role may do. Admin holds everything and is not editable;
+        <code>admin.system</code>, <code>admin.users</code> and
+        <code>admin.network</code> stay Admin's. A change applies to every holder,
+        and every token they issued, from their next request.
+      </p>
+      <div id="roles-list" class="list"></div>
+    </section>
+
+    <section class="view" data-view="approvals" hidden>
+      <h2>Account requests</h2>
+      <p class="hint">
+        Approving a request creates the account in
+        <code>awaiting_mfa</code>: it cannot do anything until the person
+        enrolls an authenticator.
+      </p>
+      <div id="approvals-list" class="list"></div>
+    </section>
+
+    <section class="view" data-view="invites" hidden>
+      <h2>Invites</h2>
+      <form id="invite-form" class="inline-form" autocomplete="off">
+        <label for="invite-role">Role</label>
+        <select id="invite-role" name="role_id" required></select>
+
+        <label for="invite-ttl">Valid for (hours)</label>
+        <input id="invite-ttl" name="ttl_hours" type="number" min="1" max="720" value="168">
+
+        <label for="invite-note">Note</label>
+        <input id="invite-note" name="note" type="text" maxlength="200">
+
+        <label class="checkbox">
+          <input id="invite-auto" name="auto_approve" type="checkbox">
+          Skip the approval queue
+        </label>
+
+        <div id="invite-access"></div>
+
+        <button type="submit" class="primary">Issue invite</button>
+      </form>
+      <div id="invite-result" class="reveal" hidden></div>
+      <div id="invites-list" class="list"></div>
+    </section>
+
+    <section class="view" data-view="sessions" hidden>
+      <h2>Your sessions</h2>
+      <p class="hint">
+        Revoking a session takes effect on its next request — sessions are
+        server-side records, not self-contained tokens, so there is nothing left
+        holding authority once the record is gone.
+      </p>
+      <div id="sessions-list" class="list"></div>
+    </section>
+
+    <section class="view" data-view="tokens" hidden>
+      <h2>API tokens</h2>
+      <p class="hint">
+        A token can never exceed your own permissions, and its scope is
+        re-checked against your current role on every request — if your role is
+        narrowed, every token you issued narrows with it. Tokens cannot change
+        credentials, manage sessions or mint further tokens.
+      </p>
+      <form id="token-form" class="inline-form" autocomplete="off">
+        <label for="token-name">Name</label>
+        <input id="token-name" name="name" type="text" required maxlength="60"
+               placeholder="what will use this">
+
+        <label for="token-ttl">Valid for (days)</label>
+        <input id="token-ttl" name="ttl_days" type="number" min="1" max="365" value="90">
+
+        <fieldset class="perms">
+          <legend>Scope</legend>
+          <div id="token-perms" class="perm-grid"></div>
+        </fieldset>
+
+        <button type="submit" class="primary">Issue token</button>
+      </form>
+      <div id="token-result" class="reveal" hidden></div>
+      <div id="tokens-list" class="list"></div>
+    </section>
+
+    <section class="view" data-view="security" hidden>
+      <h2>Security</h2>
+
+      <form id="password-form" class="inline-form" autocomplete="off">
+        <h3>Change password</h3>
+        <label for="current-password">Current password</label>
+        <input id="current-password" type="password" autocomplete="current-password" required>
+
+        <label for="new-password">New password</label>
+        <input id="new-password" type="password" autocomplete="new-password" required>
+
+        <p class="hint">Every other session is revoked when the password changes.</p>
+        <button type="submit" class="primary">Change password</button>
+      </form>
+
+      <form id="email-form" class="inline-form" autocomplete="off">
+        <h3>Change email</h3>
+        <label for="new-email">New email</label>
+        <input id="new-email" type="email" maxlength="254" required>
+
+        <label for="email-password">Current password</label>
+        <input id="email-password" type="password" autocomplete="current-password" required>
+
+        <p class="hint">Your username cannot change: it is how the audit log names you.</p>
+        <button type="submit" class="primary">Change email</button>
+      </form>
+
+      <form id="recovery-form" class="inline-form" autocomplete="off">
+        <h3>Replace recovery codes</h3>
+        <label for="recovery-password">Current password</label>
+        <input id="recovery-password" type="password" autocomplete="current-password" required>
+
+        <p class="hint">The existing codes stop working immediately.</p>
+        <button type="submit" class="danger">Generate a new set</button>
+      </form>
+
+      <div id="recovery-result" class="reveal" hidden></div>
+
+      <h3>Calendar and feed</h3>
+      <p class="hint">
+        Addresses for a calendar app (upcoming episodes) and a feed reader (what
+        arrived), within what your account can see. Anyone with them can read
+        both until you replace or revoke them.
+      </p>
+      <p id="feeds-status" class="hint"></p>
+      <div id="feeds-actions" class="actions"></div>
+      <div id="feeds-result" class="reveal" hidden></div>
+    </section>
+
+    <section class="view" data-view="wanted" hidden>
+      <h2>Wanted</h2>
+      <p id="wanted-note" class="hint"></p>
+      <p id="wanted-automatic" class="hint"></p>
+      <h3 id="wanted-films-head" hidden>Films</h3>
+      <div id="wanted-films" class="list compact"></div>
+      <h3 id="wanted-episodes-head" hidden>Episodes</h3>
+      <div id="wanted-list" class="list compact"></div>
+      <h3 id="wanted-albums-head" hidden>Albums</h3>
+      <div id="wanted-albums" class="list compact"></div>
+      <h3 id="wanted-books-head" hidden>Books</h3>
+      <div id="wanted-books" class="list compact"></div>
+    </section>
+
+    <section class="view" data-view="migrate" hidden>
+      <h2>Migrate from Radarr</h2>
+      <p class="hint">
+        This brings across the part of a Radarr library that is expensive to
+        recreate: which folder is which film. Add your existing movie folder as
+        a root folder and scan it first, then match the scanned items to
+        Radarr's identities here. Nothing is moved or renamed.
+      </p>
+      <div id="migrate-where" class="hint"></div>
+      <div id="migrate-sources" class="list compact"></div>
+      <div id="migrate-result"></div>
+    </section>
+
+    <section class="view" data-view="audit" hidden>
+      <h2>Audit log</h2>
+      <p class="hint">
+        Everything this instance recorded about who did what: sign-ins, denials,
+        account and role changes, every grab — a person's or automatic
+        acquisition's — and every change to settings, newest first. Nothing here
+        can change or remove a line. Addresses, user agents and details are shown
+        as they were recorded, and much of that was written by whoever made the
+        request.
+      </p>
+      <p id="audit-summary" class="hint"></p>
+      <form id="audit-filter" class="toolbar">
+        <select id="audit-category" aria-label="What">
+          <option value="">Everything</option>
+          <option value="auth">Sign-ins and credentials</option>
+          <option value="authz">Denials</option>
+          <option value="account">Account requests and invites</option>
+          <option value="user">Accounts</option>
+          <option value="acquisition">Grabs and the queue</option>
+          <option value="request">Requests</option>
+          <option value="media">The library</option>
+          <option value="indexer">Indexers</option>
+          <option value="egress">The tunnel</option>
+          <option value="system">Settings and backups</option>
+        </select>
+        <select id="audit-outcome" aria-label="Outcome">
+          <option value="">Any outcome</option>
+          <option value="success">Succeeded</option>
+          <option value="denied">Denied</option>
+          <option value="failure">Failed</option>
+        </select>
+        <input id="audit-actor" type="text" placeholder="Who (jacob, anonymous, system:acquire)"
+               autocomplete="off" maxlength="64">
+        <input id="audit-text" type="search" placeholder="Find in details, addresses, user agents"
+               autocomplete="off" maxlength="100">
+        <button type="submit">Show</button>
+      </form>
+      <div id="audit-list" class="list compact"></div>
+      <div id="audit-older" class="actions"></div>
+    </section>
+
+    <section class="view" data-view="tasks" hidden>
+      <h2>Scheduled tasks</h2>
+      <p class="hint">
+        A task never runs concurrently with itself. Triggering one that is
+        already running is refused rather than queued.
+      </p>
+      <div id="tasks-list" class="list"></div>
+    </section>
+
+    <section class="view" data-view="health" hidden>
+      <h2>Health</h2>
+      <p id="health-summary" class="hint"></p>
+      <div id="health-list" class="list compact"></div>
+
+      <h3>Recent log records</h3>
+      <p class="hint">
+        What this process has written since it started — the last thousand
+        records, redacted as the log output is. The host's log is the history.
+      </p>
+      <form id="logs-form" class="inline-form" autocomplete="off">
+        <label for="logs-level">At least</label>
+        <select id="logs-level">
+          <option value="debug">debug</option>
+          <option value="info" selected>info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+        </select>
+        <label for="logs-text">Containing</label>
+        <input id="logs-text" type="search" maxlength="200">
+        <button type="submit" class="primary">Show</button>
+      </form>
+      <div id="logs-list" class="list compact"></div>
+    </section>
+
+    <section class="view" data-view="backups" hidden>
+      <h2>Backups</h2>
+      <p class="hint">
+        Each backup is a snapshot of the database that passed SQLite's own
+        checks, encrypted with a passphrase derived from the master key, and
+        decrypted again to confirm it before it was kept. Without the master
+        key a backup is unreadable — so keep the key somewhere other than this
+        host, and copy the backups somewhere other than this disk.
+      </p>
+      <p id="backup-policy" class="hint"></p>
+      <div id="backup-actions" class="actions"></div>
+      <div id="backup-list" class="list compact"></div>
+      <p class="hint">
+        Nothing here downloads or restores a backup. Copy the directory above
+        off this host with your own tools. To check a copy, run
+        <code>cmediastack -verify-backup FILE</code> on the host; to restore
+        one, <code>cmediastack -restore-backup FILE -restore-to PATH</code>,
+        which writes a new database file and says how to put it in place.
+      </p>
+    </section>
+
+  </main>
+</div>
+
+<div id="boot" class="boot">Loading…</div>
+{{end}}

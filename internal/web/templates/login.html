@@ -1,0 +1,42 @@
+{{define "title"}}Sign in · CMediaStack{{end}}
+{{define "content"}}
+<main class="shell">
+  <div class="card">
+    <h1 class="brand">CMediaStack</h1>
+
+    <form id="credentials" class="step" autocomplete="on">
+      <h2>Sign in</h2>
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" autocomplete="username"
+             autocapitalize="none" spellcheck="false" required autofocus>
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password"
+             autocomplete="current-password" required>
+
+      <button type="submit" class="primary">Continue</button>
+    </form>
+
+    <form id="second-factor" class="step" hidden autocomplete="off">
+      <h2>Second factor</h2>
+      <p class="hint">
+        Enter the six-digit code from your authenticator app, or one of your
+        recovery codes.
+      </p>
+      <label for="code">Code</label>
+      <input id="code" name="code" type="text" inputmode="numeric"
+             autocomplete="one-time-code" spellcheck="false" required>
+
+      <button type="submit" class="primary">Sign in</button>
+      <button type="button" id="back" class="link">Start over</button>
+    </form>
+
+    <p id="error" class="error" hidden role="alert"></p>
+
+    <nav class="footer-links">
+      <a href="/signup">Request an account</a>
+      <a href="/reset">Forgot password</a>
+    </nav>
+  </div>
+</main>
+{{end}}

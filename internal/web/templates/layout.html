@@ -1,0 +1,25 @@
+{{define "layout" -}}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>{{block "title" .}}CMediaStack{{end}}</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/assets/{{bundle}}/{{bundle}}.css">
+</head>
+<body data-page="{{page}}">
+<noscript>
+  <div class="noscript">
+    CMediaStack needs JavaScript. Every action goes through the same
+    authenticated JSON API a script would use, rather than a second set of
+    form handlers, so there is no no-JS path to fall back to.
+  </div>
+</noscript>
+{{template "content" .}}
+{{if .SourceURL}}<footer class="source">CMediaStack {{.Version}} · <a href="{{.SourceURL}}" rel="noopener noreferrer">Source code</a> (AGPL-3.0)</footer>{{end}}
+<script src="/assets/{{bundle}}/{{bundle}}.js" defer></script>
+</body>
+</html>
+{{- end}}

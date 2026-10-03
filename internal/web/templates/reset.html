@@ -1,0 +1,46 @@
+{{define "title"}}Reset password · CMediaStack{{end}}
+{{define "content"}}
+<main class="shell">
+  <div class="card">
+    <h1 class="brand">CMediaStack</h1>
+
+    <form id="initiate" class="step" hidden autocomplete="on">
+      <h2>Reset your password</h2>
+      <p class="hint">
+        There is no mail transport configured on this instance yet, so an
+        administrator has to hand you the reset link directly. Submitting this
+        form records the request for them.
+      </p>
+
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" autocomplete="username"
+             autocapitalize="none" spellcheck="false" required autofocus>
+
+      <button type="submit" class="primary">Request a reset</button>
+    </form>
+
+    <form id="complete" class="step" hidden autocomplete="off">
+      <h2>Choose a new password</h2>
+      <p class="hint">
+        Setting a new password revokes every session on the account. You will
+        still need your authenticator to sign in afterwards — a reset recovers a
+        forgotten password, it is not a way around the second factor.
+      </p>
+
+      <label for="password">New password</label>
+      <input id="password" name="password" type="password"
+             autocomplete="new-password" required autofocus>
+      <p class="hint">At least {{.MinPasswordLength}} characters.</p>
+
+      <button type="submit" class="primary">Set password</button>
+    </form>
+
+    <p id="error" class="error" hidden role="alert"></p>
+    <p id="done" class="ok" hidden role="status"></p>
+
+    <nav class="footer-links">
+      <a href="/login">Back to sign in</a>
+    </nav>
+  </div>
+</main>
+{{end}}

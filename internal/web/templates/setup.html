@@ -1,0 +1,35 @@
+{{define "title"}}First run · CMediaStack{{end}}
+{{define "content"}}
+<main class="shell">
+  <div class="card">
+    <h1 class="brand">CMediaStack</h1>
+
+    <form id="setup" class="step" autocomplete="on">
+      <h2>Create the first administrator</h2>
+      <p class="hint">
+        This instance has no accounts yet. There is no default login and no
+        bootstrap password written anywhere — this form is the only way in, and
+        it stops existing the moment it succeeds.
+      </p>
+
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" autocomplete="username"
+             autocapitalize="none" spellcheck="false" required autofocus>
+
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email"
+             autocapitalize="none" spellcheck="false" required>
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password"
+             autocomplete="new-password" required>
+      <p class="hint">At least {{.MinPasswordLength}} characters.</p>
+
+      <button type="submit" class="primary">Create administrator</button>
+    </form>
+
+    <p id="error" class="error" hidden role="alert"></p>
+    <p id="done" class="ok" hidden role="status"></p>
+  </div>
+</main>
+{{end}}

@@ -1,0 +1,184 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # A weekly run catches newly disclosed vulnerabilities in dependencies that
+    # were clean when they were merged.
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26"
+
+jobs:
+  # --- correctness ----------------------------------------------------------
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+
+      - name: Verify dependencies
+        run: |
+          go mod download
+          go mod verify
+
+      - name: go.mod and go.sum are tidy
+        # Twice go.mod drifted from the imports without anything failing: the
+        # torrent library listed as indirect while internal/download imported
+        # it, then golang.org/x/text the same way. Builds do not care; the next
+        # person to run `go mod tidy` gets a surprise diff in an unrelated
+        # change. This fails instead, and prints what tidy would do.
+        run: go mod tidy -diff
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Confirm the build is cgo-free
+        # ADR-0002: portability depends on this, so it is asserted rather than
+        # assumed. A dependency that quietly needs cgo fails the build here.
+        run: |
+          CGO_ENABLED=0 go build -trimpath ./...
+
+      - name: Test with race detector
+        run: go test -race -count=1 ./...
+
+      - name: Coverage
+        run: |
+          go test -coverprofile=coverage.out -covermode=atomic ./...
+          go tool cover -func=coverage.out | tail -1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  # --- security gates -------------------------------------------------------
+  # Requirements §8: "CI security gates: SAST, secret scanning, dependency
+  # audit, the leak test from Section 6, and a failing-build policy on
+  # high-severity findings."
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      # v9 of the action, because .golangci.yml is a version 2 configuration and
+      # v6 refuses golangci-lint v2 outright — this job could not pass before.
+      # The linter itself is pinned to the release the tree was verified
+      # against (0 issues), so a new linter release cannot turn the build red
+      # on its own; move it deliberately, with the findings in the same change.
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+          args: --timeout=5m
+
+  vulncheck:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: govulncheck
+        # Reports only vulnerabilities actually reachable from our call graph,
+        # which keeps this gate meaningful rather than noisy.
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  sast:
+    name: SAST
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      # Pinned to a release rather than master, for the same reason as the
+      # linter: the tree is verified clean against v2.29.0, and a rule added
+      # upstream should arrive in a change that deals with what it finds.
+      - name: gosec
+        uses: securego/gosec@v2.29.0
+        with:
+          args: "-severity medium -confidence medium -exclude-dir=web ./..."
+
+  secrets:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  container:
+    name: Container build and scan
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t cmediastack:ci --build-arg VERSION=ci .
+
+      - name: Assert the container does not run as root
+        run: |
+          uid=$(docker inspect --format '{{.Config.User}}' cmediastack:ci)
+          echo "image user: $uid"
+          if [ "$uid" = "" ] || [ "$uid" = "root" ] || [ "$uid" = "0" ] || [ "$uid" = "0:0" ]; then
+            echo "FATAL: the image runs as root"
+            exit 1
+          fi
+
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: cmediastack:ci
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: cmediastack:ci
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cdx.json
+
+  # --- Phase 2 -------------------------------------------------------------
+  # The egress leak test (requirements §6, threat T13) runs here once the
+  # download engine exists. It creates a network namespace, runs the engine
+  # against a mock tracker, captures at the host side and asserts that zero
+  # packets left outside the tunnel. It is a required check, not an optional
+  # one — see docs/adr/0001-egress-control-wireguard-netns.md.
+  #
+  # leak-test:
+  #   name: Egress leak test
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - run: sudo ./scripts/leak-test.sh

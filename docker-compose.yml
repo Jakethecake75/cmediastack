@@ -1,0 +1,219 @@
+# CMediaStack deployment.
+#
+# Every hardening flag below is annotated with what it prevents. Nothing here
+# is cargo-culted; if a line has no reason next to it, delete the line.
+#
+# The gluetun sidecar and the downloader service below are commented out. To
+# download behind NordVPN, run THIS service inside gluetun's namespace instead,
+# as docs/RUNBOOK.md §4 describes. The separate downloader cannot be used yet:
+# the application has no channel to it (ADR-0001, ADR-0007). It is written out
+# so the network topology stays reviewable.
+
+services:
+  cmediastack:
+    build:
+      context: .
+      args:
+        VERSION: ${CMS_VERSION:-dev}
+    image: cmediastack:${CMS_VERSION:-dev}
+    restart: unless-stopped
+    # On a stop the application waits up to server.shutdown_grace (20s) for
+    # requests in flight, then writes what it holds only in memory — the count
+    # of denials over the audit log's ceiling (ADR-0031). Docker kills after
+    # 10s unless told otherwise, which would cut both short.
+    stop_grace_period: 30s
+
+    # --- identity ---------------------------------------------------------
+    # Nothing runs as root, ever, including in the container (requirements §2).
+    # 65532 is distroless' nonroot user.
+    #
+    # The media mount must be WRITABLE by this UID, not merely readable — see
+    # the volumes section for why. On the host:
+    #
+    #   chown -R 65532:65532 /srv/media
+    #
+    # or, on an NFS export, map the client's 65532 to whatever owns the dataset.
+    # Getting this wrong produces "permission denied" when the first root
+    # folder is added, which is the first thing an operator does.
+    user: "65532:65532"
+
+    # --- filesystem -------------------------------------------------------
+    # A read-only root filesystem means a compromised process cannot drop a
+    # binary, modify the app, or persist anything outside the volumes below.
+    read_only: true
+    tmpfs:
+      # Scratch space, since the root filesystem is read-only. noexec is the
+      # point: this is exactly where a downloaded payload would be staged.
+      - /tmp:rw,noexec,nosuid,nodev,size=256m
+
+    # --- privileges -------------------------------------------------------
+    security_opt:
+      # Stops the process gaining privileges through setuid binaries. There are
+      # none in distroless, but this closes the door regardless.
+      - no-new-privileges:true
+      # Docker's default seccomp profile plus ONE narrowly-scoped allowance.
+      #
+      # Not the default itself, and the reason is specific rather than
+      # cautious. The default permits clone only when no namespace flag is
+      # set — its rule is (arg0 & 0x7E020000) == 0, and 0x7E020000 is the sum
+      # of all seven CLONE_NEW* flags. The media-parser jail asks for three of
+      # them (ADR-0020), so under the stock profile the clone is refused, the
+      # jail is never built, and ffprobe parses hostile files with no network
+      # isolation at all. The container would start and nothing would look
+      # wrong.
+      #
+      # The shipped profile permits exactly CLONE_NEWUSER|CLONE_NEWPID|
+      # CLONE_NEWNET and denies every other namespace, keeping the ~50 syscalls
+      # Docker's default blocks. internal/playback evaluates it the way the
+      # kernel would, so it cannot drift from what the sandbox needs.
+      - seccomp:./deploy/seccomp-cmediastack.json
+    cap_drop:
+      # The app binds 8080, which is above 1024, so it needs no capabilities
+      # at all. Nothing is added back.
+      - ALL
+
+    # --- resources --------------------------------------------------------
+    # Bounds the blast radius of a decompression bomb or a runaway scan.
+    mem_limit: 1g
+    pids_limit: 256
+
+    # --- configuration ----------------------------------------------------
+    environment:
+      # 32 random bytes, base64. Generate once with:
+      #   head -c32 /dev/urandom | base64
+      # Losing this key makes every stored credential unrecoverable, and every
+      # backup unreadable: the built-in backups are encrypted to a passphrase
+      # derived from it (ADR-0029). Back it up separately from the database — a
+      # backup containing both is a backup of plaintext secrets.
+      CMS_MASTER_KEY: ${CMS_MASTER_KEY:?set CMS_MASTER_KEY in .env}
+      CMS_SERVER_ADDR: "0.0.0.0:8080"
+      CMS_MANAGEMENT_ADDR: "127.0.0.1:9090"
+      CMS_DATABASE_PATH: "/config/cmediastack.db"
+      CMS_REGISTRATION_MODE: "open" # open signup, admin approval required
+      CMS_MFA_REQUIRED: "true"
+      # Only set this if a reverse proxy actually fronts the app. Trusting a
+      # forwarded header from anywhere else makes every per-IP limit spoofable.
+      # CMS_TRUSTED_PROXIES: "172.18.0.0/16"
+      # Backups go to /config/backups unless told otherwise — the same disk as
+      # the database, which protects against a bad upgrade or a mistake but not
+      # against losing that disk. Mount somewhere else (see volumes) and name it
+      # here. A named directory must already exist: it is never created.
+      # CMS_BACKUP_DIR: "/backups"
+
+    volumes:
+      - ./config:/config:rw
+      # Library. WRITABLE, and it has to be.
+      #
+      # This said `:ro` until it was tried. A root folder cannot even be ADDED
+      # to a read-only mount: RootStore.Create validates one by writing a probe
+      # file, so the deployment failed at the first step with
+      # "/media/movies is not writable ... read-only file system" and the
+      # instance could hold no library at all.
+      #
+      # The library is not an archive this application only reads. It imports
+      # into it (hardlink or move), it renames on import, and it moves deletions
+      # into a trash directory inside the root rather than unlinking them
+      # (ADR-0016). Every one of those is a write, and the trash is the reason
+      # a delete is reversible at all.
+      #
+      # Narrow it by mounting only the directories that are actually root
+      # folders, rather than by making it read-only. There is no browse-only
+      # library mode, and pretending otherwise produces an instance that looks
+      # configured and refuses the first thing an operator does.
+      - /srv/media:/media:rw
+      # Backups on another disk or the NAS, owned by 65532 and mode 0700. If the
+      # share is not mounted when the container starts, Docker creates an empty
+      # directory here on the host's own disk — the admin screen's Backups page
+      # says when backups share the database's filesystem.
+      # - /mnt/nas/cmediastack-backups:/backups:rw
+
+    ports:
+      # Bound to loopback: the reverse proxy is the only thing that should
+      # reach the app directly. Change to 0.0.0.0 only if you know why.
+      - "127.0.0.1:8080:8080"
+
+    healthcheck:
+      # distroless has no shell and no curl, so the binary probes itself.
+      #
+      # --healthcheck, NOT --check. --check validates configuration, which is
+      # the wrong question for a healthcheck: a process whose listener has died
+      # or whose database has gone away still has valid configuration, so the
+      # container would report healthy forever and `restart: unless-stopped`
+      # would never restart it. It also named a config file this deployment
+      # does not create, so it passed unconditionally.
+      #
+      # --healthcheck GETs /readyz on the management listener, which pings the
+      # database — so a pass means the process is alive AND its storage is
+      # reachable.
+      test: ["CMD", "/usr/local/bin/cmediastack", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+# --- Phase 2: the download engine and its network jail ------------------------
+#
+# ADR-0001. The downloader has no network of its own: it shares gluetun's
+# namespace, whose only permitted egress is the WireGuard tunnel, enforced by
+# nftables that the container has no CAP_NET_ADMIN to modify.
+#
+# This is the primary egress control. The application-level SOCKS5 support is
+# defence in depth, not the mechanism the guarantee rests on.
+#
+#  gluetun:
+#    image: qmcgaw/gluetun:v3.40.0
+#    cap_add:
+#      - NET_ADMIN            # required to create the tunnel and the firewall
+#    devices:
+#      - /dev/net/tun:/dev/net/tun
+#    environment:
+#      VPN_SERVICE_PROVIDER: nordvpn
+#      VPN_TYPE: wireguard
+#      # From the NordVPN dashboard, manual setup section.
+#      WIREGUARD_PRIVATE_KEY: ${NORD_WIREGUARD_KEY:?}
+#      SERVER_COUNTRIES: ${NORD_COUNTRIES:-Netherlands}
+#      # The kill switch. Without this, a tunnel failure means direct egress.
+#      FIREWALL: "on"
+#      FIREWALL_OUTBOUND_SUBNETS: "172.18.0.0/16"  # so the app can reach it
+#      DOT: "on"
+#    restart: unless-stopped
+#
+#  downloader:
+#    image: cmediastack:${CMS_VERSION:-dev}
+#    command: ["--role", "downloader", "--config", "/config/config.yaml"]
+#    # restart is load-bearing here, not hygiene.
+#    #
+#    # If gluetun restarts, the namespace this container joined is destroyed and
+#    # a new one is created for the new container — and this one STAYS in the old
+#    # one. Verified: after restarting the tunnel container the downloader was
+#    # still "Up", with no default route, no eth0, and a dead wg0. Nothing leaked
+#    # (a probe from inside could not resolve DNS or reach the gateway), but it
+#    # sat there inert and silent.
+#    #
+#    # The process now re-verifies on egress.probe_interval and EXITS when it
+#    # cannot, so this line is what recovers it: the container is recreated, joins
+#    # the CURRENT namespace, and verifies again — or refuses to start, which is
+#    # the same guarantee as the first boot.
+#    restart: unless-stopped
+#    # No network of its own. Every packet goes through gluetun or nowhere.
+#    network_mode: "service:gluetun"
+#    depends_on:
+#      gluetun:
+#        condition: service_healthy
+#    user: "65532:65532"
+#    read_only: true
+#    security_opt:
+#      - no-new-privileges:true
+#    cap_drop:
+#      - ALL
+#    tmpfs:
+#      - /tmp:rw,noexec,nosuid,nodev,size=256m
+#    volumes:
+#      - ./config:/config:rw
+#      - /srv/media:/media:rw

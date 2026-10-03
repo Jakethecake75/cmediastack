@@ -1,0 +1,78 @@
+{{define "title"}}Set up your authenticator · CMediaStack{{end}}
+{{define "content"}}
+<main class="shell">
+  <div class="card wide">
+    <h1 class="brand">CMediaStack</h1>
+
+    <section id="offer" class="step" hidden>
+      <h2>Set up your authenticator</h2>
+      <p class="hint">
+        Every account on this instance needs a second factor. Until yours is
+        set up, this page is the only thing you can reach.
+      </p>
+
+      <ol class="steps">
+        <li>
+          Open your authenticator app — Google Authenticator, Authy, Aegis,
+          1Password, anything that does TOTP.
+        </li>
+        <li>
+          Scan this code.
+          <div class="qr-wrap" id="qr-wrap" hidden>
+            <img id="qr" alt="QR code containing your authenticator setup key" width="320" height="320">
+          </div>
+          <p class="hint">
+            On a phone, <a id="uri-link" href="#" rel="noreferrer">tap here
+            instead</a> and the app opens with the key already filled in.
+          </p>
+
+          <details id="manual">
+            <summary>Can&rsquo;t scan it? Enter the key by hand</summary>
+            <p class="hint">
+              In your app choose <strong>add account</strong>, then
+              <strong>enter a setup key</strong> (some call it "manual entry").
+            </p>
+            <div class="secret-row">
+              <code id="secret" class="secret"></code>
+              <button type="button" id="copy-secret" class="ghost">Copy</button>
+            </div>
+            <p class="hint">
+              Account name <code id="account-label"></code>, type
+              <strong>time-based</strong>, 6 digits, 30 seconds — the defaults
+              everywhere.
+            </p>
+          </details>
+        </li>
+        <li>Type the six-digit code it shows.</li>
+      </ol>
+
+      <form id="confirm" autocomplete="off">
+        <label for="code">Code from the app</label>
+        <input id="code" name="code" type="text" inputmode="numeric"
+               autocomplete="one-time-code" spellcheck="false" required>
+        <button type="submit" class="primary">Confirm and activate</button>
+      </form>
+    </section>
+
+    <section id="codes" class="step" hidden>
+      <h2>Save your recovery codes</h2>
+      <p class="warn">
+        These are shown once and are not recoverable. Each one signs you in
+        exactly once if you lose the authenticator. Store them somewhere that
+        is not the device running the authenticator.
+      </p>
+      <ul id="code-list" class="code-list"></ul>
+      <div class="row">
+        <button type="button" id="copy-codes" class="ghost">Copy all</button>
+        <button type="button" id="go-app" class="primary">I have saved them</button>
+      </div>
+    </section>
+
+    <p id="error" class="error" hidden role="alert"></p>
+
+    <nav class="footer-links">
+      <button type="button" id="logout" class="link">Sign out</button>
+    </nav>
+  </div>
+</main>
+{{end}}

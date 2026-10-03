@@ -1,0 +1,32 @@
+# Build output
+/bin/
+coverage.out
+*.test
+
+# Runtime state — never commit a database or a real config
+/config/config.yaml
+/config/*.db
+/config/*.db-wal
+/config/*.db-shm
+*.db
+*.db-wal
+*.db-shm
+
+# Secrets. The master key lives in the environment; .env is where docker
+# compose reads it from, and it must never be committed.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!config/config.example.yaml
+
+# Frontend
+/web/node_modules/
+/web/dist/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store

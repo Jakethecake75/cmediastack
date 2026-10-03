@@ -1,0 +1,298 @@
+# CMediaStack configuration.
+#
+# Every value here is a default; the file only needs the ones you change.
+# Environment variables prefixed CMS_ override the file (see the README).
+# The server validates this at boot and refuses to start on an insecure
+# combination — run `cmediastack --check --config config/config.yaml` to test a
+# change without restarting anything.
+#
+# Secrets are NOT in this file. CMS_MASTER_KEY comes from the environment, and
+# proxy passwords are referenced by environment variable name.
+
+server:
+  addr: "0.0.0.0:8080"
+  # /healthz, /readyz and /metrics live here. Keep it off the public interface:
+  # the lint refuses to boot if this is bound to all interfaces or shares the
+  # public listener's address.
+  management_addr: "127.0.0.1:9090"
+  base_url: "https://media.example.com"
+  # Every page links here as where this build's source can be had (AGPL-3.0,
+  # section 13). The default is the project's repository, which is right only
+  # for an unmodified build: run a modified one and this must point at YOUR
+  # modified source.
+  source_url: "https://github.com/jakethecake75/cmediastack"
+  # ONLY set this if a reverse proxy actually fronts the app, and only to that
+  # proxy's address. Empty means X-Forwarded-For is ignored entirely, which is
+  # the safe default: trusting it from anywhere else makes every per-IP rate
+  # limit spoofable by setting a header.
+  trusted_proxies: []
+  # Leave empty when the reverse proxy terminates TLS.
+  tls_cert_file: ""
+  tls_key_file: ""
+  read_header_timeout: 10s
+  shutdown_grace: 20s
+
+database:
+  path: "/config/cmediastack.db"
+  busy_timeout: 5s
+
+auth:
+  # OWASP's second recommended argon2id configuration. Raising these later does
+  # not invalidate existing credentials: the parameters are stored inside each
+  # hash and credentials are re-derived on next successful login.
+  argon2_memory_kib: 19456
+  argon2_iterations: 2
+  argon2_parallelism: 1
+  argon2_salt_length: 16
+  argon2_key_length: 32
+
+  # Mandatory authenticator-app MFA for every user. The lint complains if this
+  # is false, because turning it off should be a deliberate act.
+  mfa_required: true
+  totp_issuer: "CMediaStack"
+  recovery_code_count: 10
+
+  session_idle_timeout: 12h
+  session_absolute_timeout: 720h
+
+  min_password_length: 12
+  # HIBP k-anonymity range check, performed through the metadata egress profile.
+  breach_check_enabled: true
+
+  login_max_attempts: 5
+  login_window: 15m
+
+registration:
+  # open   — anyone may submit a request; it grants nothing until approved
+  # invite — a valid single-use invite code is required to submit
+  # closed — the signup routes are not registered at all; /signup 404s from the
+  #          router, with no "signups are disabled" message to distinguish it
+  mode: "open"
+
+  # Unreviewed requests expire and are purged. They hold an email, a source IP
+  # and a password hash, so they do not accumulate.
+  pending_ttl: 336h # 14 days
+
+  # Signup performs argon2id hashing on an anonymous endpoint. These caps are
+  # what make open registration on a public listener survivable.
+  max_outstanding: 50
+  per_ip_per_hour: 3
+  proof_of_work_bits: 18
+
+secrets:
+  # Names the environment variable holding a base64-encoded 32-byte key.
+  # Generate one with: head -c32 /dev/urandom | base64
+  # Losing it makes every stored credential unrecoverable. Back it up
+  # separately from the database.
+  master_key_env: "CMS_MASTER_KEY"
+
+logging:
+  level: "info" # debug | info | warn | error
+  format: "json"
+  modules: {}
+
+egress:
+  # Turning this on without enforcement is a boot failure, by design.
+  anonymity_enabled: false
+
+  # ADR-0001: the primary control. The downloader runs in a network namespace
+  # whose only permitted egress is the WireGuard tunnel, enforced by a firewall
+  # it has no capability to modify. The application-level proxy settings below
+  # are defence in depth, not the mechanism the guarantee rests on.
+  require_namespace_guard: true
+
+  # The interface outbound download traffic must leave by. At startup the
+  # downloader asks the kernel which interface it would actually use for a
+  # public destination and REFUSES TO START if the answer differs. Leaving this
+  # empty falls back to a name-prefix heuristic, which is weaker and says so in
+  # the log.
+  tunnel_interface: "wg0"
+
+  # Optional host:port the health probe connects to through the guarded dialer,
+  # proving the path works end to end rather than merely looking right. Empty
+  # means routing verification alone decides health, which reaches nothing and
+  # is the private default. If you set this, pick something you do not mind
+  # appearing in a tracker-adjacent connection log.
+  #
+  # It must be PUBLIC. The guarded dialer refuses private, loopback and
+  # link-local destinations — that is the SSRF rule and it applies here too — so
+  # "192.168.1.1:443" can never succeed, and since the downloader exits when the
+  # probe fails it would crash-loop reporting a tunnel failure that is really
+  # this line. The config lint refuses a literal private address at boot rather
+  # than letting you find out that way.
+  #
+  # What it buys: routing verification alone cannot see a tunnel that is up and
+  # carrying nothing. Observed — after the VPN container restarted, the stranded
+  # namespace still had "default dev wg0" with wg0 UP, so the route check passed
+  # while nothing could leave at all. Only an end-to-end probe catches that.
+  probe_target: ""
+
+  # How often the tunnel is re-checked. A tunnel that drops does not restart the
+  # process, so nothing notices until this runs.
+  probe_interval: 60s
+
+  # Profiles that keep working when the tunnel is down. Deny by default: the
+  # list contains notification only, because a kill switch that also silences
+  # the alert telling you it fired is one you find out about from your library
+  # being empty. Metadata is deliberately NOT here — a TMDB query reveals what
+  # you are interested in.
+  exempt_from_kill_switch:
+    - notification
+
+  # Nothing inherits implicitly. A subsystem with no profile is blocked.
+  profiles:
+    download:
+      mode: "direct" # set to socks5 only if you are not using the namespace guard
+    indexer:
+      mode: "direct"
+      # Private trackers commonly ban proxy and VPN addresses. Per-indexer
+      # overrides in the admin UI route those direct while everything else
+      # tunnels.
+      #
+      # An indexer on your own network — a Prowlarr or Jackett on the LAN or in
+      # this compose file — is reachable in direct mode at exactly the address
+      # you give it, and at no other private address (ADR-0024). Through a
+      # socks5 proxy it is not reachable at all: the proxy is not on your LAN.
+    metadata:
+      mode: "direct" # TMDB, TVDB, MusicBrainz
+    subtitle:
+      mode: "direct"
+    notification:
+      # The Discord webhook (ADR-0032). The link itself is set on the
+      # Notifications screen, never here: it is a credential, and this file
+      # gets pasted into forums.
+      mode: "direct"
+    update:
+      mode: "blocked" # no phone-home
+
+  # Example of a proxied download profile. remote_dns selects socks5h
+  # semantics: hostnames are resolved by the proxy, never by the host resolver.
+  # The lint refuses to boot on socks5 without it.
+  #
+  #   download:
+  #     mode: "socks5"
+  #     address: "amsterdam.nl.socks.nordhold.net:1080"
+  #     username: "your-nord-service-username"
+  #     password_env: "CMS_PROXY_PASSWORD"
+  #     remote_dns: true
+  #
+  # Note: NordVPN offers no port forwarding, so you are a passive peer either
+  # way, and their SOCKS5 endpoints do not reliably relay UDP — which costs you
+  # DHT, uTP and every udp:// tracker. The WireGuard namespace above avoids
+  # both problems. See docs/adr/0001-egress-control-wireguard-netns.md.
+
+media:
+  trash_retention: 168h  # 7 days before a soft-deleted file is really removed
+  playback_history_retention: 4320h # 180 days
+  # 0 means derive the ceiling from the runtime hardware probe. On Skylake
+  # (i5-6500T / HD 530) expect roughly 4-6 concurrent 1080p H.264 transcodes,
+  # and no HDR tone mapping at all — see ADR-0005.
+  max_concurrent_transcodes: 0
+
+download:
+  # Starts the BitTorrent engine in this process.
+  #
+  # FALSE is the honest default for a first run. An operator who has not yet
+  # configured egress should not have a torrent client running, and turning it
+  # on should be a decision they made rather than one they inherited.
+  #
+  # What the engine is allowed to do is DERIVED from the egress policy above,
+  # not configured beside it:
+  #   - namespace guard  -> DHT and uTP on; the kernel carries the guarantee
+  #   - socks5/http-proxy -> DHT and uTP OFF, TCP only, no incoming connections.
+  #                          A proxy carries TCP and nothing else; leaving UDP on
+  #                          would announce your address to the swarm while you
+  #                          believed otherwise.
+  # The startup log says which mode is in force and why.
+  enabled: false
+
+  # Torrent data. Files live under data_dir/<infohash>/, never under a directory
+  # named from the torrent: a torrent's declared name is chosen by the uploader
+  # and "../../etc/cron.d/x" is a legal bencode string.
+  data_dir: "/downloads"
+
+  # Peer port. 0 picks one. NordVPN forwards no ports, so nothing reaches this
+  # from outside and the instance is a passive peer either way (ADR-0001).
+  listen_port: 0
+
+  max_active: 5
+
+  # Seeding after completion. Private trackers require it; leaving it off is how
+  # an account gets banned.
+  seed: true
+  # A download that makes no progress for this long has stalled (ADR-0034):
+  # one automatic acquisition grabbed is given up, and what it was for is
+  # searched for again; a person's is reported on the Queue screen and left for
+  # them to remove. Counted only while the instance runs. 0 turns it off; under
+  # an hour is refused.
+  stall_after: 24h
+
+acquisition:
+  # Automatic acquisition (ADR-0030): what the Wanted screen lists is fetched
+  # without anybody pressing Grab — monitored episodes that have aired and are
+  # not on disk, and monitored films with no file. Nothing else: it never adds
+  # a title, never replaces a file you have, never takes a season pack.
+  #
+  # OFF by default, like the engine. Turn it on once egress, your indexers and
+  # a default quality profile are set up, and the download engine is on (the
+  # configuration check refuses it without). Also CMS_ACQUISITION_AUTOMATIC.
+  #
+  # What it grabs must match exactly one wanted item — by the same rules a
+  # person's Search uses — be accepted by the DEFAULT quality profile (with no
+  # default profile it grabs nothing), have seeders, not be named in a language
+  # (a dub, or a title not in English: a person's choice), and never have been
+  # in the queue before: removing a download is how you say "not that one".
+  # Every grab is in the audit log as acquisition.grabbed by system:acquire.
+  automatic: false
+
+  # How often each enabled indexer is asked for its recent releases: one
+  # request per indexer per interval, however large the library. This is how a
+  # new episode arrives the day it is released. At least 10m.
+  rss_interval: 15m
+
+  # How often wanted items are searched for, and how many each time. One
+  # search asks every enabled indexer, so these two are the request budget
+  # your indexers see: with the defaults, at most twelve searches an hour.
+  # Never-searched items go first, newest first. An item whose search finds
+  # nothing waits 6 hours, then 12, 24, 48, up to a week, while the recent
+  # releases are watched for it.
+  search_interval: 15m
+  searches_per_run: 3
+
+  # The most downloads one pass may start. A bug, a flood of mislabelled
+  # releases or a hostile indexer could otherwise queue the whole Wanted list
+  # at once; what is not grabbed waits for the next pass.
+  max_grabs_per_run: 5
+  # Replace a file below its title's quality cutoff with a better release
+  # (ADR-0036): searched at most weekly per file, after everything missing; the
+  # old file goes to the trash. Off by default — fetching what is missing is
+  # not agreeing to replacing what is there. Needs automatic: true.
+  upgrades: false
+
+backup:
+  # Encrypted, checked backups of the database (ADR-0029). The media are not in
+  # them — they are your files, on your storage — and neither is the master
+  # key: a backup is encrypted to a passphrase derived from it, so a backup
+  # without the key is unreadable. Keep the key somewhere other than this host.
+  #
+  # Where they go. Empty means "backups" beside the database: /config/backups
+  # in the container. That is a default, not a recommendation — backups on the
+  # database's disk die with it. Another disk, or the NAS the media live on, is
+  # better. A directory named here must already exist and be writable by the
+  # app's user: it is never created, because a missing one is more often a disk
+  # that is not mounted, and creating it would put the backups back on this
+  # host's own disk. CMS_BACKUP_DIR overrides this.
+  dir: ""
+
+  # How old the newest backup may get before another is taken. Checked hourly
+  # and once at startup, against the backups on disk, so restarts do not reset
+  # it. 0s turns scheduled backups off (the admin screen can still take one) —
+  # written 0s, not 0: a bare number is not a duration and the file will not load;
+  # anything under 1h is refused, because the check runs hourly.
+  interval: 24h
+
+  # How long a backup is kept...
+  keep: 168h # 7 days
+  # ...except the newest keep_min, which are kept however old they get, so a
+  # schedule that has stopped working does not delete the last good backups.
+  keep_min: 3

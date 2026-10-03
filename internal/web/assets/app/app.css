@@ -1,0 +1,606 @@
+/* CMediaStack — authenticated bundle.
+ *
+ * Self-contained by design: it shares no file with the anonymous bundle, which
+ * is what keeps the two surfaces genuinely separate rather than separate by
+ * convention. Hand-written; no framework, no third-party CSS.
+ */
+
+:root {
+  color-scheme: dark light;
+  --bg: #0e1116;
+  --surface: #161b22;
+  --surface-2: #1c232c;
+  --line: #2a323d;
+  --text: #e6edf3;
+  --muted: #8b96a5;
+  --accent: #4c8dff;
+  --accent-ink: #ffffff;
+  --danger: #ff6b6b;
+  --ok: #5bd68a;
+  --warn: #ffc857;
+  --radius: 10px;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --line: #d8dee6;
+    --text: #1b2027;
+    --muted: #5b6673;
+    --accent: #1a5fd0;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.boot {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.noscript {
+  padding: 14px 16px;
+  background: var(--warn);
+  color: #1b2027;
+  font-size: 14px;
+}
+
+/* --- chrome ----------------------------------------------------------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand-small {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.nav { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.nav button {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.nav button:hover { color: var(--text); }
+
+.nav button[aria-current="page"] {
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: var(--line);
+}
+
+.spacer { flex: 1 1 auto; }
+
+.whoami { font-size: 13px; color: var(--muted); }
+
+.content {
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+}
+
+h2 { margin: 0 0 6px; font-size: 20px; }
+h3 { margin: 28px 0 8px; font-size: 15px; }
+
+.hint { margin: 6px 0 18px; font-size: 13px; color: var(--muted); }
+
+/* --- feedback --------------------------------------------------------- */
+
+.error, .ok {
+  max-width: 940px;
+  margin: 16px auto 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  border: 1px solid;
+}
+
+.error { color: var(--danger); border-color: var(--danger); }
+.ok { color: var(--ok); border-color: var(--ok); }
+
+/* --- lists and cards -------------------------------------------------- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.stat {
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.stat .value { font-size: 24px; font-weight: 600; }
+.stat .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+.list { display: flex; flex-direction: column; gap: 10px; }
+
+.item {
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.item .title { font-weight: 600; }
+
+.item .meta {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  word-break: break-word;
+}
+
+.item .actions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.item .actions label {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
+.badge {
+  display: inline-block;
+  padding: 1px 8px;
+  margin-left: 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.badge.good { color: var(--ok); border-color: var(--ok); }
+.badge.bad { color: var(--danger); border-color: var(--danger); }
+.badge.warn { color: var(--warn); border-color: var(--warn); }
+
+/* --- forms ------------------------------------------------------------ */
+
+.inline-form {
+  padding: 16px;
+  margin-bottom: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.inline-form h3 { margin-top: 0; }
+
+label {
+  display: block;
+  margin: 12px 0 5px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+label.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+}
+
+label.checkbox input { width: auto; margin: 0; }
+
+input[type="text"],
+input[type="search"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+input[type="url"],
+textarea,
+select {
+  width: 100%;
+  max-width: 360px;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+textarea { max-width: 640px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+
+.item select, .item input { max-width: 220px; }
+
+fieldset.perms {
+  margin: 16px 0 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+fieldset.perms legend { font-size: 13px; color: var(--muted); padding: 0 6px; }
+
+.perm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+}
+
+.perm-grid label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 400;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.perm-grid input { width: auto; }
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 8px 14px;
+}
+
+button[disabled] { opacity: 0.55; cursor: progress; }
+
+.primary { margin-top: 16px; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.ghost { background: transparent; color: var(--text); border-color: var(--line); }
+.danger { margin-top: 16px; background: transparent; color: var(--danger); border-color: var(--danger); font-weight: 600; }
+
+.item .primary, .item .ghost, .item .danger { margin-top: 0; }
+
+/* --- one-shot secrets -------------------------------------------------- */
+
+.reveal {
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+}
+
+.reveal .secret {
+  display: block;
+  margin: 10px 0;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 14px;
+  word-break: break-all;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.code-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.code-list li {
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 14px;
+  text-align: center;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+code { font-family: var(--mono); font-size: 0.92em; }
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+[hidden] { display: none !important; }
+
+/* ---------------------------------------------------------------------------
+   Media views
+   --------------------------------------------------------------------------- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.toolbar input[type="search"] {
+  min-width: 14rem;
+  flex: 1 1 14rem;
+}
+
+.list.compact .item { padding: 8px 12px; }
+
+/* An item that was refused, and one that was accepted. Colour is never the only
+   signal: every rejected item also carries a .why line saying so in words, for
+   the sake of anyone who cannot distinguish these two hues. */
+.item.accepted { border-left: 3px solid var(--ok, #2f7d4f); }
+.item.rejected { border-left: 3px solid var(--warn, #9a6a1a); }
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin-top: 0.35rem;
+}
+
+.fact { display: inline-flex; gap: 0.35rem; align-items: baseline; }
+.fact-label { font-size: 0.78rem; opacity: 0.62; }
+.fact-value { font-size: 0.86rem; }
+
+.why {
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--warn-text, #8a5d12);
+}
+
+.note {
+  padding: 0.5rem 0.7rem;
+  margin-bottom: 0.5rem;
+  border-radius: 4px;
+  background: var(--note-bg, #f3f0e6);
+  font-size: 0.86rem;
+}
+
+.small { font-size: 0.8rem; }
+.muted { opacity: 0.65; }
+
+progress {
+  width: 100%;
+  height: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.detail {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line, #ddd);
+}
+
+.history { margin-top: 0.6rem; }
+
+.history-line {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.84rem;
+  padding: 0.2rem 0;
+}
+
+.badge {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  background: var(--line, #ddd);
+  flex: 0 0 auto;
+}
+
+/* The audit log (ADR-0031): the action reads as the line's title, the
+   detail as its body. */
+.audit-action { margin-left: 0.5rem; font-family: var(--mono, monospace); }
+.audit-detail { margin-top: 0.25rem; overflow-wrap: anywhere; }
+.audit-more { margin-top: 0.3rem; font-size: 0.84rem; }
+.audit-more summary { cursor: pointer; color: var(--muted); }
+.audit-more .fact-value { overflow-wrap: anywhere; }
+
+.badge.imported { background: var(--ok-bg, #dff0e4); }
+.badge.skipped  { background: var(--note-bg, #f3f0e6); }
+.badge.failed   { background: var(--err-bg, #f6dede); }
+
+@media (max-width: 640px) {
+  .toolbar { gap: 0.5rem; }
+  .facts { gap: 0.25rem 0.75rem; }
+}
+
+/* --------------------------------------------------------------------------
+ * The identification review screen
+ *
+ * The only screen in this application whose job is to be LOOKED at: somebody is
+ * deciding whether two things are the same film, and the poster answers that
+ * faster than any amount of text. So the candidates are cards in a grid rather
+ * than rows in a list, and the picture is the biggest thing in each one.
+ * ----------------------------------------------------------------------- */
+
+.candidates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.candidate {
+  display: flex;
+  /* Not the default stretch: a flex item stretched to the card's height wins
+   * over the poster's own aspect-ratio, and the posters came out tall and
+   * cropped — visibly wrong on the one screen whose job is to be looked at. */
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+/* The ranked-first candidate, marked but not chosen: the ordering is a
+ * suggestion, and a screen that made it look decided would be arguing rather
+ * than asking. */
+.candidate-top { border-color: var(--accent); }
+
+.poster {
+  flex: 0 0 5.5rem;
+  width: 5.5rem;
+  aspect-ratio: 2 / 3;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.poster-none {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-align: center;
+  padding: 0.25rem;
+}
+
+.candidate-body { flex: 1 1 auto; min-width: 0; }
+.candidate-body .title { font-size: 0.95rem; }
+
+.candidate .overview {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.35rem;
+  /* Truncated rather than scrolled: this is a recognition aid, and a card that
+   * grows to fit a long synopsis makes the grid unreadable. */
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.candidate .actions { margin-top: 0.5rem; }
+
+@media (max-width: 30rem) {
+  .candidates { grid-template-columns: 1fr; }
+}
+
+/* --------------------------------------------------------------------------
+ * Adding a series (ADR-0025)
+ *
+ * A result is a row, not a poster card: the provider's search results carry
+ * no poster this instance may fetch until one of them is added (ADR-0018's
+ * bound), and a grid of empty frames would be worse than a list.
+ * ----------------------------------------------------------------------- */
+
+.item .overview {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 0.3rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.add-choice {
+  margin-top: 0.6rem;
+  padding: 0.2rem 0.75rem 0.75rem;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+}
+
+.add-choice select, .add-choice input { max-width: 26rem; }
+
+/* --------------------------------------------------------------------------
+ * The player
+ * ----------------------------------------------------------------------- */
+
+.player {
+  margin: 0.75rem 0;
+  background: #000;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.player video {
+  display: block;
+  width: 100%;
+  /* Capped so a 4K file does not push the details off the screen on a laptop,
+   * and letterboxed rather than cropped: a player that crops is a player that
+   * hides part of the picture without saying so. */
+  max-height: 70vh;
+  background: #000;
+  object-fit: contain;
+}
+
+/* Under the Search form: which profile judges searches, and — for an
+ * administrator — the button that changes it (ADR-0027). */
+.inline-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.4rem 0 0.9rem;
+}
+
+/* The term and profile a targeted search was asked with, offered back. */
+.ask-again { margin: 0.5rem 0; }
+
+/* What an account may see of the library (ADR-0037): which libraries, and up
+ * to which rating. */
+.access { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.access-roots { display: flex; flex-direction: column; gap: 4px; }
+.access-edit { margin-top: 8px; }
+
+/* A role's permissions (ADR-0039): columns, not one long list. */
+.access-roots.permissions { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 16px; }
+
+/* The offer of the source, on every page (ADR-0052). */
+footer.source {
+  text-align: center;
+  font-size: 0.75rem;
+  opacity: 0.7;
+  padding: 1.5rem 1rem 1rem;
+}

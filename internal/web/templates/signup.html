@@ -1,0 +1,45 @@
+{{define "title"}}Request an account · CMediaStack{{end}}
+{{define "content"}}
+<main class="shell">
+  <div class="card">
+    <h1 class="brand">CMediaStack</h1>
+
+    <form id="signup" class="step" autocomplete="on">
+      <h2>Request an account</h2>
+      <p class="hint">
+        Registering does not create an account. It creates a request that an
+        administrator has to approve before you can sign in.
+      </p>
+
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" autocomplete="username"
+             autocapitalize="none" spellcheck="false" required autofocus>
+
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email"
+             autocapitalize="none" spellcheck="false" required>
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password"
+             autocomplete="new-password" required>
+      <p class="hint">At least {{.MinPasswordLength}} characters.</p>
+
+      <label for="invite">Invite code <span class="optional">optional</span></label>
+      <input id="invite" name="invite_code" type="text" spellcheck="false"
+             autocapitalize="characters" autocomplete="off">
+
+      <label for="note">Anything the reviewer should know <span class="optional">optional</span></label>
+      <textarea id="note" name="note" rows="3" maxlength="500"></textarea>
+
+      <button type="submit" class="primary">Submit request</button>
+    </form>
+
+    <p id="error" class="error" hidden role="alert"></p>
+    <p id="done" class="ok" hidden role="status"></p>
+
+    <nav class="footer-links">
+      <a href="/login">Back to sign in</a>
+    </nav>
+  </div>
+</main>
+{{end}}

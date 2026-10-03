@@ -1,0 +1,21 @@
+-- The library item an approved request is waiting for (ADR-0028).
+--
+-- media_request.media_item_id meant "what the request finally became", written
+-- when an import fulfilled it. It now also holds the item an approver LINKED an
+-- approved request to, before anything of that item is on disk. The state says
+-- which of the two a row is:
+--
+--   state       media_item_id
+--   approved    NULL           approved, and nothing in the library for it yet
+--   approved    set            linked: waiting for a file of that item
+--   fulfilled   set            a file arrived; this is the item it arrived in
+--   fulfilled   NULL           fulfilled, and that item has since been deleted
+--
+-- The foreign key keeps its SET NULL, and for a linked request that is right
+-- too: deleting the item leaves the request approved and unlinked, which is
+-- exactly what it then is.
+--
+-- The index answers the question every import now asks — which open requests
+-- does this item satisfy? — without reading every request.
+CREATE INDEX idx_media_request_item
+    ON media_request(media_item_id) WHERE media_item_id IS NOT NULL;
