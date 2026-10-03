@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/jakethecake75/cmediastack/internal/books"
 	"github.com/jakethecake75/cmediastack/internal/download"
 	"github.com/jakethecake75/cmediastack/internal/egress"
+	"github.com/jakethecake75/cmediastack/internal/egressproxy"
 	"github.com/jakethecake75/cmediastack/internal/follow"
 	"github.com/jakethecake75/cmediastack/internal/identify"
 	"github.com/jakethecake75/cmediastack/internal/identity"
@@ -61,16 +63,45 @@ import (
 var Version = "dev"
 
 func main() {
-	if err := run(); err != nil {
+	err := run()
+	switch exitCode(err) {
+	case 0, 3:
+	case 78:
 		// Configuration problems get the full list, because fixing them one
 		// boot at a time is miserable.
-		if le, ok := config.AsLintError(err); ok {
-			fmt.Fprintln(os.Stderr, le.Error())
-			os.Exit(78) // EX_CONFIG
-		}
+		le, _ := config.AsLintError(err)
+		fmt.Fprintln(os.Stderr, le.Error())
+	default:
 		fmt.Fprintf(os.Stderr, "cmediastack: %v\n", err)
-		os.Exit(1)
 	}
+	os.Exit(exitCode(err))
+}
+
+// errRestart ends runApp when the web asked for a restart (ADR-0065).
+var errRestart = errors.New("restart requested")
+
+// exitCode is the process's exit status for run's result: 3 for a restart,
+// which systemd's Restart=always and Docker's unless-stopped both start
+// again; 78 (EX_CONFIG) for a configuration the lint refused.
+func exitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	if errors.Is(err, errRestart) {
+		return 3
+	}
+	if _, ok := config.AsLintError(err); ok {
+		return 78
+	}
+	return 1
+}
+
+// restartable wraps the signal context: trigger ends it the way a signal
+// does, and requested says whether it was a restart rather than a signal.
+func restartable(parent context.Context) (ctx context.Context, trigger func(), requested func() bool) {
+	ctx, cancel := context.WithCancel(parent)
+	var asked atomic.Bool
+	return ctx, func() { asked.Store(true); cancel() }, asked.Load
 }
 
 func run() error {
@@ -190,8 +221,9 @@ func run() error {
 
 func runApp(cfg config.Config, logger *slog.Logger, logRing *logging.Ring) error {
 	started := time.Now()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	ctx, restart, restartRequested := restartable(sigCtx)
 
 	// The master key is validated by the config lint before we get here, so a
 	// failure at this point is a genuine surprise.
@@ -297,6 +329,23 @@ func runApp(cfg config.Config, logger *slog.Logger, logRing *logging.Ring) error
 	if err := profileStore.EnsureDefaults(ctx); err != nil {
 		return fmt.Errorf("seed quality profiles: %w", err)
 	}
+
+	// --- a SOCKS5 proxy set from the web (ADR-0065) ---------------------------
+	// Laid over the file's direct profiles before the guard is built. When the
+	// result fails the lint, those profiles are blocked rather than direct, and
+	// the app still starts so the screen that fixes it is reachable.
+	proxyStore := egressproxy.NewStore(store, cipher)
+	storedProxy, _, err := proxyStore.Load(ctx)
+	if err != nil {
+		logger.Error("the stored SOCKS5 proxy could not be read; none is applied", slog.String("error", err.Error()))
+	}
+	fileCfg := cfg
+	cfg, proxyStatus := egressproxy.Apply(cfg, storedProxy, os.Getenv)
+	if proxyStatus.Problem != "" {
+		logger.Error("the SOCKS5 proxy set from the web fails the configuration lint; the profiles it "+
+			"would carry are blocked until it is changed", slog.String("problem", proxyStatus.Problem))
+	}
+	proxyCtl := egressproxy.NewController(proxyStore, fileCfg, os.Getenv, proxyStatus)
 
 	// --- egress ------------------------------------------------------------
 	// Built before the scheduler, because the health task needs it. It starts
@@ -1091,6 +1140,8 @@ func runApp(cfg config.Config, logger *slog.Logger, logRing *logging.Ring) error
 		SourceURL: cfg.Server.SourceURL,
 		Version:   Version,
 		Subtitles: subtitleSvc,
+		Proxy:     proxyCtl,
+		Restart:   restart,
 		Calendar:  episodeStore,
 		Arrivals:  mediaStore,
 		BaseURL:   cfg.Server.BaseURL,
@@ -1210,6 +1261,10 @@ func runApp(cfg config.Config, logger *slog.Logger, logRing *logging.Ring) error
 
 	if shutdownErr != nil {
 		return fmt.Errorf("shutdown: %w", shutdownErr)
+	}
+	if restartRequested() {
+		logger.Info("stopped cleanly; restarting as asked from the web")
+		return errRestart
 	}
 	logger.Info("stopped cleanly")
 	return nil

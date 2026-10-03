@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jakethecake75/cmediastack/internal/authz"
+	"github.com/jakethecake75/cmediastack/internal/egressproxy"
 	"github.com/jakethecake75/cmediastack/internal/identity"
 	"github.com/jakethecake75/cmediastack/internal/importer"
 	"github.com/jakethecake75/cmediastack/internal/library"
@@ -30,6 +31,8 @@ const maxRequestBody = 64 << 10 // 64 KiB
 // the route-enumeration test cover the whole surface before the business logic
 // behind it exists.
 type Handlers struct {
+	proxy     *egressproxy.Controller
+	restart   func()
 	svc       *identity.Service
 	auth      *SessionAuthenticator
 	tasks     TaskScheduler
@@ -168,6 +171,10 @@ type Deps struct {
 	Version   string
 	// Subtitles fetches a file's subtitle from OpenSubtitles (ADR-0055).
 	Subtitles SubtitleService
+	// Proxy is the SOCKS5 proxy set from the web, and Restart stops the
+	// process gracefully so its supervisor starts it again (ADR-0065).
+	Proxy   *egressproxy.Controller
+	Restart func()
 
 	// TrashRetention is how long a deleted file stays recoverable. Zero is
 	// replaced with the safe default rather than honoured; see New.
@@ -189,6 +196,7 @@ func New(d Deps) *Handlers {
 		d.TrashRetention = 7 * 24 * time.Hour
 	}
 	return &Handlers{
+		proxy: d.Proxy, restart: d.Restart,
 		svc: d.Identity, auth: d.Auth, tasks: d.Tasks, egress: d.Egress,
 		indexers: d.Indexers, search: d.Search, profiles: d.Profiles,
 		downloads: d.Downloads, roots: d.Roots, media: d.Media,

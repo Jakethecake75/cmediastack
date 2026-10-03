@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	"github.com/jakethecake75/cmediastack/internal/identity"
 	"github.com/jakethecake75/cmediastack/internal/platform/config"
@@ -192,4 +193,53 @@ func Validate(base config.Config, s Setting, getenv func(string) string) error {
 func blank(s Setting) Setting {
 	s.Password = ""
 	return s
+}
+
+// Controller is what the API holds: the store, the configuration the file and
+// environment gave before any proxy was laid over it, and what is in force.
+type Controller struct {
+	store   *Store
+	base    config.Config
+	getenv  func(string) string
+	inForce Status
+	// saved is a save since boot: a changed password alone is not visible in
+	// what Status compares, and still applies only on restart.
+	saved atomic.Bool
+}
+
+// NewController builds the controller. base is the configuration before the
+// overlay; inForce is what Apply reported at boot.
+func NewController(store *Store, base config.Config, getenv func(string) string, inForce Status) *Controller {
+	return &Controller{store: store, base: base, getenv: getenv, inForce: inForce}
+}
+
+// Status is what is stored, against what this process is using.
+func (c *Controller) Status(ctx context.Context) (Status, error) {
+	stored, _, err := c.store.Load(ctx)
+	if err != nil {
+		return Status{}, err
+	}
+	st := c.inForce
+	st.Stored = blank(stored)
+	st.Differs = c.saved.Load() || !sameSetting(stored, c.storedAtBoot())
+	return st, nil
+}
+
+// storedAtBoot is the setting the boot overlaid, password aside.
+func (c *Controller) storedAtBoot() Setting { return c.inForce.Stored }
+
+func sameSetting(a, b Setting) bool {
+	return a.Address == b.Address && a.Username == b.Username && slices.Equal(a.Profiles, b.Profiles)
+}
+
+// Save validates and stores a proxy. It applies on restart.
+func (c *Controller) Save(ctx context.Context, s Setting) error {
+	if err := Validate(c.base, s, c.getenv); err != nil {
+		return err
+	}
+	if err := c.store.Save(ctx, s); err != nil {
+		return err
+	}
+	c.saved.Store(true)
+	return nil
 }

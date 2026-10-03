@@ -190,3 +190,69 @@ func TestValidateRefusesWhatTheLintRefuses(t *testing.T) {
 		t.Errorf("clearing: %v", err)
 	}
 }
+
+func TestTheControllerStoresOnlyWhatValidatesAndSaysWhenItDiffers(t *testing.T) {
+	cfg, getenv := base(t)
+	c, _ := testCipher(t)
+	store := NewStore(memSettings{}, c)
+	ctl := NewController(store, cfg, getenv, Status{})
+
+	if err := ctl.Save(t.Context(), Setting{Address: "p:1080", Profiles: []string{"indexer"}}); err == nil {
+		t.Error("a proxy the lint refuses was saved")
+	}
+	if _, ok, _ := store.Load(t.Context()); ok {
+		t.Error("a refused proxy was stored")
+	}
+	if err := ctl.Save(t.Context(), nord); err != nil {
+		t.Fatal(err)
+	}
+	st, err := ctl.Status(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Stored.Address != nord.Address || st.Stored.Password != "" || !st.Differs {
+		t.Errorf("status %+v, want the stored proxy, no password, differing from what is in force", st)
+	}
+}
+
+func TestAChangedPasswordAloneStillAppliesOnRestart(t *testing.T) {
+	cfg, getenv := base(t)
+	c, _ := testCipher(t)
+	store := NewStore(memSettings{}, c)
+	if err := store.Save(t.Context(), nord); err != nil {
+		t.Fatal(err)
+	}
+	ctl := NewController(store, cfg, getenv, Status{Stored: blank(nord), InForce: blank(nord)})
+	if st, _ := ctl.Status(t.Context()); st.Differs {
+		t.Error("what booted is what is stored, yet it differs")
+	}
+	changed := nord
+	changed.Password = "a-new-password"
+	if err := ctl.Save(t.Context(), changed); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := ctl.Status(t.Context()); !st.Differs {
+		t.Error("a new password does not say it applies on restart")
+	}
+}
+
+func TestAProxyStoredSinceBootDiffersFromTheOneInForce(t *testing.T) {
+	cfg, getenv := base(t)
+	c, _ := testCipher(t)
+	store := NewStore(memSettings{}, c)
+	if err := store.Save(t.Context(), nord); err != nil {
+		t.Fatal(err)
+	}
+	for name, change := range map[string]func(*Setting){
+		"address":  func(s *Setting) { s.Address = "another.proxy.example:1080" },
+		"username": func(s *Setting) { s.Username = "another-user" },
+		"profiles": func(s *Setting) { s.Profiles = []string{"download"} },
+	} {
+		booted := blank(nord)
+		change(&booted)
+		ctl := NewController(store, cfg, getenv, Status{Stored: booted, InForce: booted})
+		if st, _ := ctl.Status(t.Context()); !st.Differs {
+			t.Errorf("the stored proxy has another %s than the booted one, yet does not differ", name)
+		}
+	}
+}
