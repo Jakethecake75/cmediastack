@@ -50,11 +50,14 @@ jobs:
           CGO_ENABLED=0 go build -trimpath ./...
 
       - name: Test with race detector
-        run: go test -race -count=1 ./...
+        # Every API test builds and migrates its own database, and under -race
+        # on a hosted runner the package takes longer than go test's default
+        # ten minutes (it timed out mid-migration, not in a hang).
+        run: go test -race -count=1 -timeout=30m ./...
 
       - name: Coverage
         run: |
-          go test -coverprofile=coverage.out -covermode=atomic ./...
+          go test -timeout=30m -coverprofile=coverage.out -covermode=atomic ./...
           go tool cover -func=coverage.out | tail -1
 
       - uses: actions/upload-artifact@v4
