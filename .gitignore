@@ -30,3 +30,6 @@ coverage.out
 .vscode/
 *.swp
 .DS_Store
+
+# Plan-execution scratch (superpowers skills)
+.superpowers/

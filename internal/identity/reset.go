@@ -330,6 +330,60 @@ func (svc *Service) ChangePassword(ctx context.Context, current, next, sourceIP,
 	return nil
 }
 
+// Reauthenticate asks the signed-in account for its password and a current
+// authenticator code again, before a change a stolen session must not be able
+// to make (ADR-0065). A recovery code is not accepted: it would be spent on a
+// settings change, and it is the account's way back in, not a confirmation.
+// Failures count toward the sign-in lockout as a failed sign-in does.
+func (svc *Service) Reauthenticate(ctx context.Context, password, code, sourceIP, userAgent string) error {
+	p := authz.FromContext(ctx)
+	if p == nil || !p.CanAct() {
+		return ErrLoginFailed
+	}
+	user, err := svc.store.UserByID(ctx, p.UserID)
+	if err != nil {
+		return err
+	}
+
+	userKey := "user:" + strings.ToLower(user.Username)
+	n, err := svc.store.RecentFailures(ctx, "login", userKey, svc.policy.LoginWindow)
+	if err != nil {
+		return err
+	}
+	if n >= svc.policy.LoginMaxAttempts {
+		return ErrThrottled
+	}
+	if err := VerifyPassword(password, user.PasswordHash); err != nil {
+		_ = svc.store.RecordAttempt(ctx, "login", userKey, false)
+		_ = svc.audit.Write(ctx, audit.Event{
+			ActorUserID: &user.ID, ActorLabel: user.Username,
+			Action: audit.ActionLoginFailed, Outcome: audit.OutcomeFailure,
+			SourceIP: sourceIP, UserAgent: userAgent, Detail: "re-authentication: password did not verify",
+		})
+		return ErrLoginFailed
+	}
+
+	secret, err := svc.store.TOTPSecret(user)
+	now := svc.now()
+	if err == nil {
+		if err = VerifyTOTP(secret, code, now); err == nil {
+			// A code stays valid for its whole step; consuming the counter is
+			// what stops it being offered twice.
+			err = svc.store.ConsumeTOTPCounter(ctx, user.ID, ConsumedCounter(now))
+		}
+	}
+	if err != nil {
+		_ = svc.store.RecordAttempt(ctx, "login", userKey, false)
+		_ = svc.audit.Write(ctx, audit.Event{
+			ActorUserID: &user.ID, ActorLabel: user.Username,
+			Action: audit.ActionMFAFailed, Outcome: audit.OutcomeFailure,
+			SourceIP: sourceIP, UserAgent: userAgent, Detail: "re-authentication: authenticator code refused",
+		})
+		return ErrLoginFailed
+	}
+	return nil
+}
+
 // RegenerateRecoveryCodes issues a fresh set, invalidating the old ones.
 func (svc *Service) RegenerateRecoveryCodes(ctx context.Context, currentPassword, sourceIP, userAgent string) ([]string, error) {
 	p := authz.FromContext(ctx)
