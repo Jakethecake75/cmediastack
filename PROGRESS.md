@@ -65,7 +65,7 @@ and does nothing unless a Radarr database is placed in its directory
 | | |
 |---|---|
 | Go packages | 37 |
-| Tests | 1455, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Tests | 1457, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached (run again at 6l, after 6h made `golang.org/x/net/html` reached code). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
 | Routes registered | 151 (15 anonymous, 51 admin-hidden, 19 session-only). **0 of 151 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
@@ -5208,11 +5208,13 @@ supersedes ADR-0013's file-only egress for the proxy alone.
 | 1 | **Tracker announces bypassed the egress guard.** The engine set the torrent library's `HTTPDialContext`, but announces dial through `TrackerDialContext`, which was never set — so they left by the host's own route whatever the profile said. Inside ADR-0001's namespace the kernel still contained them; under a proxy they disclosed the operator's address to every tracker. Found on the running binary: the SOCKS5 stand-in saw nothing while the queue said *downloading* | Fixed: announces dial through the guard; `download.TestTrackerAnnouncesGoThroughTheGuard`, with a control |
 | 2 | **With enforcement off, a socks5 download profile kept DHT, uTP and incoming connections on**, because `ConfigFor` tested "enforcement off" before "a proxy" — UDP beside a proxy that carries TCP. Off is this deployment's default | Fixed: the proxy case comes first; `download.TestAProxyProfileForcesUDPOffWithoutEnforcement` |
 | 3 | Refusing a UDP tracker's socket makes the library panic, so a hostile torrent could have stopped the process | UDP trackers are dropped from a torrent or magnet as it is added when the profile cannot carry UDP; `download.TestUDPTrackersAreRefusedUnderAProxy` |
+| 4 | The review: **a stored proxy that could not be read was not applied at all**, so the traffic meant for it went direct | Every profile it may carry that the file leaves direct is blocked until it is saved again; `egressproxy.TestAnUnreadableProxyBlocksWhatItMightCarry` |
+| 5 | Checking that on the running binary: **a blocked download profile still had DHT, uTP and incoming connections on.** The guard refused its TCP; the UDP sockets are the library's own. True of `download: blocked` in the file since Phase 2 | A blocked profile turns them off; `download.TestABlockedProfileTurnsUDPOff`, and the engine came up with all three off |
 
 #### Verified
 
-Every row above is mutation-verified: fifty-seven mutations, fifty-six killed
-and one equivalent. Nine needed more work — four malformed and rewritten; the
+Every row above is mutation-verified: sixty-one mutations, sixty killed and one
+equivalent. Nine needed more work — four malformed and rewritten; the
 equivalent one, a host:port check the lint already makes, deleted; four showing
 gaps the tests now cover (an address, username or profiles change since boot,
 and a blank password offered for another proxy).

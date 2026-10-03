@@ -45,7 +45,7 @@ the figures below are counted from the tree.
 |---|---|
 | Application code | ~47,700 lines of Go, and ~5,800 of hand-written HTML, CSS and JavaScript |
 | Tests | ~46,000 lines |
-| Test functions | 1,455 |
+| Test functions | 1,457 |
 | Migrations | 36 |
 | HTTP routes | 151 (15 anonymous; none answer 501) |
 | Decision records | 65 (numbered 0001–0065, 0009 unwritten, 0003a) |

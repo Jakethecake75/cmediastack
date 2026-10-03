@@ -129,7 +129,15 @@ func ConfigFor(dataDir string, listenPort int, profile egress.Profile,
 	var notes []string
 
 	switch {
-	// First, whatever else is true: a proxy carries TCP only, so UDP is off
+	// A blocked profile sends nothing. DHT and uTP have sockets of their own,
+	// outside the guard, so they go too (ADR-0065: the fallback for a proxy
+	// that is not in force is blocked, and must not leak UDP).
+	case profile.Mode == egress.ModeBlocked:
+		cfg.EnableDHT, cfg.EnableUTP, cfg.AcceptIncoming = false, false, false
+		notes = append(notes, "the download profile is blocked: nothing is fetched, and DHT, uTP and "+
+			"incoming connections are off")
+
+	// Then, whatever else is true: a proxy carries TCP only, so UDP is off
 	// under one with enforcement on or off (ADR-0065 found it off, the LXC
 	// deployment's default, with DHT and uTP still on beside the proxy).
 	case profile.Mode == egress.ModeSOCKS5 || profile.Mode == egress.ModeHTTPProxy:

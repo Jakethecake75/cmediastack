@@ -3,6 +3,7 @@ package egressproxy
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 
@@ -292,5 +293,32 @@ func TestABlankPasswordKeepsTheStoredOneForTheSameProxy(t *testing.T) {
 	}
 	if got, _, _ := store.Load(t.Context()); got.Password != "" {
 		t.Errorf("the stored password was carried to another proxy: %q", got.Password)
+	}
+}
+
+// A proxy that is stored but cannot be read — a damaged setting, a key that
+// does not open it — must not leave its traffic going direct (ADR-0065): every
+// profile it may carry that the file leaves direct is blocked until it is
+// saved again.
+func TestAnUnreadableProxyBlocksWhatItMightCarry(t *testing.T) {
+	cfg, getenv := base(t)
+	cfg.Egress.Profiles["subtitle"] = config.EgressProfile{Mode: config.EgressSOCKS5, Address: "file:1080", RemoteDNS: true}
+	out, st := Unreadable(cfg, errors.New("does not open with this master key"))
+	for _, name := range []string{"download", "indexer", "metadata"} {
+		if out.Egress.Profiles[name].Mode != config.EgressBlocked {
+			t.Errorf("%s = %+v, want blocked", name, out.Egress.Profiles[name])
+		}
+	}
+	if out.Egress.Profiles["subtitle"].Mode != config.EgressSOCKS5 {
+		t.Errorf("the file's own subtitle proxy was replaced: %+v", out.Egress.Profiles["subtitle"])
+	}
+	if out.Egress.Profiles["notification"].Mode != config.EgressDirect {
+		t.Errorf("notifications were blocked too: %+v", out.Egress.Profiles["notification"])
+	}
+	if !strings.Contains(st.Problem, "master key") || !strings.Contains(st.Problem, "blocked") {
+		t.Errorf("Problem = %q, want why and what it means", st.Problem)
+	}
+	if err := config.Lint(out, getenv); err != nil {
+		t.Errorf("the result fails the lint: %v", err)
 	}
 }

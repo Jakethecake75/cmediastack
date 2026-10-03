@@ -335,15 +335,16 @@ func runApp(cfg config.Config, logger *slog.Logger, logRing *logging.Ring) error
 	// result fails the lint, those profiles are blocked rather than direct, and
 	// the app still starts so the screen that fixes it is reachable.
 	proxyStore := egressproxy.NewStore(store, cipher)
-	storedProxy, _, err := proxyStore.Load(ctx)
-	if err != nil {
-		logger.Error("the stored SOCKS5 proxy could not be read; none is applied", slog.String("error", err.Error()))
-	}
 	fileCfg := cfg
-	cfg, proxyStatus := egressproxy.Apply(cfg, storedProxy, os.Getenv)
+	var proxyStatus egressproxy.Status
+	if storedProxy, _, err := proxyStore.Load(ctx); err != nil {
+		cfg, proxyStatus = egressproxy.Unreadable(cfg, err)
+	} else {
+		cfg, proxyStatus = egressproxy.Apply(cfg, storedProxy, os.Getenv)
+	}
 	if proxyStatus.Problem != "" {
-		logger.Error("the SOCKS5 proxy set from the web fails the configuration lint; the profiles it "+
-			"would carry are blocked until it is changed", slog.String("problem", proxyStatus.Problem))
+		logger.Error("the SOCKS5 proxy set from the web is not in force; the traffic it would carry is "+
+			"blocked until it is saved again", slog.String("problem", proxyStatus.Problem))
 	}
 	proxyCtl := egressproxy.NewController(proxyStore, fileCfg, os.Getenv, proxyStatus)
 

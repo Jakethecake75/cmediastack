@@ -154,3 +154,20 @@ func TestAProxyProfileForcesUDPOffWithoutEnforcement(t *testing.T) {
 		}
 	}
 }
+
+// A blocked download profile is the fallback for a proxy that is not in force
+// (ADR-0065). DHT and uTP have sockets of their own, outside the guard, so
+// blocked must turn them off too — enforcement on or off, jailed or not.
+func TestABlockedProfileTurnsUDPOff(t *testing.T) {
+	for _, enforcing := range []bool{false, true} {
+		for _, jailed := range []bool{false, true} {
+			cfg, notes := ConfigFor("/data", 0, egress.Profile{Mode: egress.ModeBlocked}, enforcing, jailed)
+			if cfg.EnableDHT || cfg.EnableUTP || cfg.AcceptIncoming {
+				t.Errorf("enforcing=%v jailed=%v: a blocked profile left UDP or incoming on: %+v", enforcing, jailed, cfg)
+			}
+			if !strings.Contains(strings.ToLower(strings.Join(notes, " ")), "blocked") {
+				t.Errorf("enforcing=%v jailed=%v: the notes do not say the profile is blocked: %v", enforcing, jailed, notes)
+			}
+		}
+	}
+}

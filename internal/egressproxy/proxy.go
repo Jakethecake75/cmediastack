@@ -169,6 +169,20 @@ func Apply(base config.Config, s Setting, getenv func(string) string) (config.Co
 	return out, st
 }
 
+// Unreadable is the boot's answer to a proxy that is stored but cannot be
+// read: not knowing what it carried, every profile it may carry that the file
+// leaves direct is blocked — never left direct — until it is saved again.
+func Unreadable(base config.Config, err error) (config.Config, Status) {
+	out, _, _ := overlay(base, Setting{})
+	for _, name := range Offered {
+		if p, present := out.Egress.Profiles[name]; !present || p.Mode == config.EgressDirect {
+			out.Egress.Profiles[name] = config.EgressProfile{Mode: config.EgressBlocked}
+		}
+	}
+	return out, Status{Problem: "the saved SOCKS5 proxy could not be read (" + err.Error() + "), so the " +
+		"traffic it may carry is blocked until it is saved again"}
+}
+
 // Validate checks a proxy before it is stored: the profiles it may carry, then
 // the boot's lint on the result — which also refuses an address that is not
 // host:port — so a combination the boot would refuse is refused now.
