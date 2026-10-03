@@ -67,6 +67,8 @@ type entry struct {
 	failed, refused string
 	// when, if set, picks the lines of this kind that are sent at all.
 	when func(audit.Record) bool
+	// always sends the line whatever the categories say (ADR-0065).
+	always bool
 }
 
 // A condition on a line.
@@ -111,6 +113,10 @@ var catalog = map[audit.Action]entry{
 	audit.ActionIndexerDeleted:    {category: Security, title: "Indexer removed"},
 	audit.ActionBackupRestored:    {category: Security, title: "Database restored from a backup"},
 	audit.ActionFirstRunCompleted: {category: Security, title: "First-run setup completed"},
+	// Where the traffic goes: sent even with Security off, so an operator
+	// hears of a change they did not make (ADR-0065).
+	audit.ActionEgressProxyChanged: {category: Security, title: "SOCKS5 proxy changed", always: true},
+	audit.ActionSystemRestarted:    {category: Security, title: "Restarted from the web"},
 
 	// Accounts.
 	audit.ActionAccountRequested: {category: Accounts, title: "Account requested — waiting for approval"},
@@ -145,10 +151,10 @@ var catalog = map[audit.Action]entry{
 
 // classify says whether an audit line is sent, under which category and
 // title.
-func classify(r audit.Record) (Category, string, bool) {
+func classify(r audit.Record) (Category, string, bool, bool) {
 	e, ok := catalog[r.Action]
 	if !ok || (e.when != nil && !e.when(r)) {
-		return "", "", false
+		return "", "", false, false
 	}
 	var title string
 	switch r.Outcome {
@@ -159,7 +165,7 @@ func classify(r audit.Record) (Category, string, bool) {
 	default:
 		title = e.title
 	}
-	return e.category, title, title != ""
+	return e.category, title, title != "", e.always
 }
 
 // Titles for the tasks a failure of which means something particular; any

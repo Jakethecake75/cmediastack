@@ -309,6 +309,13 @@ func RegisterRoutes(rt *Router, h *Handlers) {
 	rt.Admin(http.MethodGet, "/api/v1/admin/egress", authz.PermManageNetwork, h.or(h.EgressStatus))
 	rt.Admin(http.MethodPatch, "/api/v1/admin/egress", authz.PermManageNetwork, h.or(h.EgressUpdate))
 	rt.Admin(http.MethodPost, "/api/v1/admin/egress/leak-test", authz.PermManageNetwork, h.or(h.EgressLeakTest))
+	// The SOCKS5 proxy, set from the web with the password and a fresh code
+	// (ADR-0065). Everything else about egress stays in the file.
+	// Session-only as well as hidden: it asks for the password and a code, and
+	// an API token is not the person who knows them.
+	rt.register(Route{Method: http.MethodPut, Pattern: "/api/v1/admin/egress/proxy",
+		Access: AccessPermission, Permission: authz.PermManageNetwork, Hidden: true, SessionOnly: true},
+		h.or(h.SetEgressProxy))
 	// Reading where the library lives is browsing; changing it is not. The
 	// listing is gated on PermBrowse inside the store, so it is registered
 	// here at the permission that lets a Manager fill in a form — the store
@@ -346,6 +353,7 @@ func RegisterRoutes(rt *Router, h *Handlers) {
 	// let it roll the instance back — suspended accounts live again, old
 	// passwords valid again, the audit log rewound.
 	rt.Admin(http.MethodPost, "/api/v1/admin/system/backup", authz.PermSystemSettings, h.or(h.TakeBackup))
+	rt.Admin(http.MethodPost, "/api/v1/admin/system/restart", authz.PermSystemSettings, h.or(h.Restart))
 	rt.Admin(http.MethodGet, "/api/v1/admin/system/backups", authz.PermSystemSettings, h.or(h.ListBackups))
 	// The process's recent log records, redacted, and every health check at
 	// once (ADR-0040). /healthz stays on the management listener and says ok.

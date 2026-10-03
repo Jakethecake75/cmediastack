@@ -62,10 +62,10 @@ and does nothing unless a Radarr database is placed in its directory
 
 | | |
 |---|---|
-| Go packages | 36 |
-| Tests | 1428, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Go packages | 37 |
+| Tests | 1451, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached (run again at 6l, after 6h made `golang.org/x/net/html` reached code). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
-| Routes registered | 149 (15 anonymous, 49 admin-hidden, 18 session-only). **0 of 149 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
+| Routes registered | 151 (15 anonymous, 51 admin-hidden, 19 session-only). **0 of 151 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
 | **Can you log in?** | **Yes, in a browser.** First run → wizard → login → authenticator enrollment → working session |
 | **Is there a UI?** | **Yes.** No build step, no third-party frontend code |

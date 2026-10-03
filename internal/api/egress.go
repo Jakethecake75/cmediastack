@@ -67,6 +67,14 @@ func (h *Handlers) EgressStatus(w http.ResponseWriter, r *http.Request) {
 		"note": "Egress policy is set in the configuration file and cannot be changed at runtime. " +
 			"See PATCH /api/v1/admin/egress.",
 	}
+	if h.proxy != nil {
+		st, err := h.proxy.Status(r.Context())
+		if err != nil {
+			body["proxy_error"] = err.Error()
+		} else {
+			body["proxy"] = st
+		}
+	}
 	if !h.egress.Enforcing() {
 		// Said in words, not only as a boolean beside a green "healthy". An
 		// operator glancing at this page must not come away believing their

@@ -116,10 +116,10 @@
   - `TestAProxyChangeIsAuditedWithoutItsPassword` — one `egress.proxy.changed` line naming old and new address; the password appears in no audit line.
   - `TestTheEgressStatusShowsTheProxyAndNeverItsPassword` — `GET /api/v1/admin/egress` has `proxy.stored.address`, `proxy.differs`, and no password anywhere in the body.
   - `TestRestartIsAuditedAndCallsRestart` — 202, a `system.restarted` line, `Deps.Restart` called once; a non-admin gets the usual refusal.
-  - `TestTheEgressPatchIsStillClosed` (existing) still passes.
+  - `TestEgressPolicyCannotBeChangedOverHTTP` (existing) still passes.
   - notify: `TestAProxyChangeIsSentWhateverTheCategories` — all categories off, an `egress.proxy.changed` record → sent; another Security record → not sent.
 - [ ] **Step 2: Run** `w.sh go test ./internal/api/ ./internal/notify/` — FAIL.
-- [ ] **Step 3: Implement.** Handler order: decode → `h.svc.Reauthenticate` (`ErrThrottled` → 429, `ErrLoginFailed` → 403) → `Deps.Proxy.Save` (validation error → 422) → audit → 200. `catalog` `entry` gains `always bool`; `classify` returns it and `Run` sends when `on[cat] || always`; entries: `ActionEgressProxyChanged {category: Security, title: "SOCKS5 proxy changed", always: true}`, `ActionSystemRestarted {category: Security, title: "Restarted from the web"}`. Restart handler writes 202 before calling `Deps.Restart`. Update the route lists the structural tests hold (`allowlist.go` if it lists admin routes, `api.TestATitleOutOfScope…` is unaffected), then `go generate ./internal/docs/`.
+- [ ] **Step 3: Implement.** Handler order: decode → `h.svc.Reauthenticate` (`ErrThrottled` → 429, `ErrLoginFailed` → 403) → `Deps.Proxy.Save` (validation error → 422) → audit → 200. `catalog` `entry` gains `always bool`; `classify` returns it and `Run` sends when `on[cat] || always`; entries: `ActionEgressProxyChanged {category: Security, title: "SOCKS5 proxy changed", always: true}`, `ActionSystemRestarted {category: Security, title: "Restarted from the web"}`. Restart handler writes 202 before calling `Deps.Restart`. Update the route lists the structural tests hold (`allowlist.go` if it lists admin routes, `api.TestATitleOutOfScopeDoesNotExist` is unaffected), then `go generate ./internal/docs/`.
 - [ ] **Step 4: Run** — PASS, including `./internal/docs/`. Mutate: the re-auth call, the `always` clause, the audit write, the password blanking in status.
 - [ ] **Step 5: Commit** `api: set the SOCKS5 proxy with re-authentication; restart from the web`.
 

@@ -480,7 +480,7 @@ func (s *Service) Run(ctx context.Context) (string, error) {
 
 	b := batch{now: now}
 	for _, r := range records {
-		if cat, title, ok := classify(r); ok && on[cat] {
+		if cat, title, ok, always := classify(r); ok && (on[cat] || always) {
 			b.addRecord(cat, title, r)
 		}
 	}

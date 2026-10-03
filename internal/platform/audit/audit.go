@@ -78,6 +78,11 @@ const (
 	ActionIndexerDeleted Action = "indexer.deleted"
 	ActionEgressChanged  Action = "egress.changed"
 	ActionKillSwitch     Action = "egress.kill_switch"
+	// ActionEgressProxyChanged records the SOCKS5 proxy set from the web,
+	// naming the old and new address and never a password (ADR-0065).
+	ActionEgressProxyChanged Action = "egress.proxy.changed"
+	// ActionSystemRestarted records a restart asked for from the web.
+	ActionSystemRestarted Action = "system.restarted"
 
 	ActionRequestSubmitted Action = "request.submitted"
 	ActionRequestApproved  Action = "request.approved"

@@ -24,12 +24,14 @@ import (
 	"github.com/jakethecake75/cmediastack/internal/authz"
 	"github.com/jakethecake75/cmediastack/internal/download"
 	"github.com/jakethecake75/cmediastack/internal/egress"
+	"github.com/jakethecake75/cmediastack/internal/egressproxy"
 	"github.com/jakethecake75/cmediastack/internal/identity"
 	"github.com/jakethecake75/cmediastack/internal/importer"
 	"github.com/jakethecake75/cmediastack/internal/indexer"
 	"github.com/jakethecake75/cmediastack/internal/library"
 	"github.com/jakethecake75/cmediastack/internal/notify"
 	"github.com/jakethecake75/cmediastack/internal/platform/audit"
+	"github.com/jakethecake75/cmediastack/internal/platform/config"
 	"github.com/jakethecake75/cmediastack/internal/platform/db"
 	"github.com/jakethecake75/cmediastack/internal/platform/secrets"
 	"github.com/jakethecake75/cmediastack/internal/release"
@@ -81,6 +83,11 @@ type rig struct {
 	// notifier sends to fakeDiscord, which stands in for Discord.
 	notifier *notify.Service
 	discord  *fakeDiscord
+	// adminSecret is the authenticator bootstrapAdmin enrolled, for routes
+	// that ask for a fresh code (ADR-0065); restarts counts Deps.Restart.
+	adminSecret string
+	proxy       *egressproxy.Controller
+	restarts    *int
 }
 
 // fakeEngine stands in for the download engine.
@@ -277,12 +284,27 @@ func newRigWith(t *testing.T, tweak func(*identity.Policy)) *rig {
 	discord := &fakeDiscord{info: notify.Info{Name: "CMediaStack", ChannelID: "42"}}
 	notifier := notify.NewService(store, cipher, auditLog, discord, clk.now)
 
+	// The proxy is judged against the configuration this deployment boots
+	// with: everything direct, no namespace guard.
+	proxyBase := config.Default()
+	proxyBase.Egress.RequireNamespaceGuard = false
+	proxyEnv := func(name string) string {
+		if name == proxyBase.Secrets.MasterKeyEnv {
+			return keyB64
+		}
+		return ""
+	}
+	proxy := egressproxy.NewController(egressproxy.NewStore(store, cipher), proxyBase, proxyEnv, egressproxy.Status{})
+	restarts := new(int)
+
 	RegisterRoutes(rt, New(Deps{
 		Identity: svc, Auth: auth, Egress: guard, Indexers: indexers,
 		Search: searcher, Profiles: profiles, Downloads: downloads,
 		Roots: roots, Media: media, Scanner: scanner, Deleter: scanner,
 		Tickets: tickets, Grabs: searcher, Requests: requests, Audit: auditLog,
 		Notifications:  notifier,
+		Proxy:          proxy,
+		Restart:        func() { *restarts++ },
 		TrashRetention: 7 * 24 * time.Hour,
 	}))
 
@@ -290,7 +312,7 @@ func newRigWith(t *testing.T, tweak func(*identity.Policy)) *rig {
 		audit: auditLog, egress: guard, indexers: indexers, profiles: profiles,
 		downloads: downloads, tickets: tickets, roots: roots, media: media,
 		scanner: scanner, requests: requests, database: database,
-		notifier: notifier, discord: discord}
+		notifier: notifier, discord: discord, proxy: proxy, restarts: restarts}
 }
 
 // client keeps cookies across requests, like a browser.
@@ -397,6 +419,7 @@ func (r *rig) bootstrapAdmin() *client {
 		r.t.Fatalf("enroll begin: %d %s", res.Code, res.Raw)
 	}
 	secret, _ := res.Body["secret"].(string)
+	r.adminSecret = secret
 
 	res = c.post("/api/v1/auth/mfa/enroll/confirm", map[string]any{
 		"secret": secret, "code": r.mustCode(secret),

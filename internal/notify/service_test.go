@@ -699,3 +699,26 @@ func TestLeavingAChannelIsSaidInIt(t *testing.T) {
 		t.Fatal("not removed")
 	}
 }
+
+// A proxy change is sent whatever the categories say (ADR-0065): an operator
+// learns of a change to where their traffic goes even with Security off.
+func TestAProxyChangeIsSentWhateverTheCategories(t *testing.T) {
+	r := newRig(t)
+	r.configure()
+	r.runSends()
+	if err := r.svc.SetCategories(admin(), []Category{Library}, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	r.runSends()
+	jacob := int64(1)
+	r.write(audit.Event{ActorUserID: &jacob, ActorLabel: "jacob", Action: audit.ActionEgressProxyChanged,
+		Detail: "from (none) to amsterdam.nl.socks.nordhold.net:1080"})
+	r.write(audit.Event{ActorUserID: &jacob, ActorLabel: "jacob", Action: audit.ActionPasswordChanged})
+	got := r.runSends()
+	if !strings.Contains(got, "SOCKS5 proxy changed") || !strings.Contains(got, "nordhold") {
+		t.Errorf("the proxy change was not sent: %q", got)
+	}
+	if strings.Contains(got, "Password changed") {
+		t.Errorf("a Security line was sent with Security off: %q", got)
+	}
+}

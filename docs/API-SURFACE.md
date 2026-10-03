@@ -4,10 +4,10 @@
 Run `go generate ./internal/docs/` after changing routes;
 `docs.TestTheGeneratedDocumentsAreCurrent` fails while this file is stale.
 
-149 routes. **15 are reachable without a session**; every one of those also appears in `api.AnonymousAllowlist`, and `Router.register` panics at startup if the two ever disagree.
+151 routes. **15 are reachable without a session**; every one of those also appears in `api.AnonymousAllowlist`, and `Router.register` panics at startup if the two ever disagree.
 
-- **49 hidden** — 404 rather than 403 when unauthorized, so the route's existence is not disclosed (requirements §7.3).
-- **18 session-only** — an API token may not use them whatever its scope. Credential management lives here.
+- **51 hidden** — 404 rather than 403 when unauthorized, so the route's existence is not disclosed (requirements §7.3).
+- **19 session-only** — an API token may not use them whatever its scope. Credential management lives here.
 - **1 browser-facing** — may redirect a denied navigation instead of answering with JSON (ADR-0012).
 - **0 not implemented** — the access class is enforced, the handler answers `501`.
 
@@ -67,12 +67,14 @@ Run `go generate ./internal/docs/` after changing routes;
 | POST | `/api/v1/admin/rootfolders/{id}/refresh` | `library.root_folders` | hidden |
 | POST | `/api/v1/admin/rootfolders/{id}/scan` | `library.root_folders` | hidden |
 | POST | `/api/v1/admin/system/backup` | `admin.system` | hidden |
+| POST | `/api/v1/admin/system/restart` | `admin.system` | hidden |
 | POST | `/api/v1/admin/system/tasks/{name}/run` | `admin.system` | hidden |
 | POST | `/api/v1/admin/trash/purge` | `library.delete` | hidden |
 | POST | `/api/v1/admin/trash/restore` | `library.delete` | hidden |
 | POST | `/api/v1/admin/users` | `admin.users` | hidden |
 | POST | `/api/v1/admin/users/{id}/reset-link` | `admin.users` | hidden |
 | POST | `/api/v1/admin/users/{id}/suspend` | `account.suspend` | hidden |
+| PUT | `/api/v1/admin/egress/proxy` | `admin.network` | hidden, session only |
 | PUT | `/api/v1/admin/metadata/token` | `admin.system` | hidden |
 | PUT | `/api/v1/admin/notifications/categories` | `admin.system` | hidden |
 | PUT | `/api/v1/admin/notifications/webhook` | `admin.system` | hidden |
