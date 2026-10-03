@@ -388,8 +388,10 @@
       }, function () { show(err, 'could not reach the server'); });
     });
 
+    /* An administrator lands on Getting started; anyone else's app falls
+     * back to the overview, since the view is not theirs. */
     $('go-app').addEventListener('click', function () {
-      window.location.assign('/');
+      window.location.assign('/#start');
     });
 
     $('logout').addEventListener('click', function () {

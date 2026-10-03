@@ -290,13 +290,65 @@
       <p class="hint">
         Where each subsystem's traffic goes, and whether the tunnel downloads
         depend on is up. The policy is the configuration file's, changed there
-        and applied by a restart: nothing on this page can loosen it.
+        and applied by a restart — except the SOCKS5 proxy below, which asks
+        for your password and an authenticator code, is announced on Discord,
+        and also applies on restart.
       </p>
       <div id="network-status" class="list compact"></div>
       <div id="network-actions" class="actions"></div>
       <div id="network-leak" class="list compact"></div>
       <h3>Per subsystem</h3>
       <div id="network-profiles" class="list compact"></div>
+
+      <h3>SOCKS5 proxy</h3>
+      <p class="hint">
+        A proxy such as NordVPN's carries the ticked traffic instead of this
+        machine's own address. If it cannot be reached, that traffic stops; it
+        never goes direct. A proxy carries TCP only, so downloads run without
+        DHT or uTP.
+      </p>
+      <div id="proxy-status" class="list compact"></div>
+      <form id="proxy-form" class="inline-form" autocomplete="off">
+        <label for="proxy-address">Address, host:port (blank removes the proxy)</label>
+        <input id="proxy-address" type="text" maxlength="255" placeholder="amsterdam.nl.socks.nordhold.net:1080">
+        <label for="proxy-user">Username</label>
+        <input id="proxy-user" type="text" maxlength="200" autocomplete="off">
+        <label for="proxy-password">Password (blank keeps it for the same proxy and username)</label>
+        <input id="proxy-password" type="password" maxlength="200" autocomplete="new-password">
+        <fieldset class="perms" id="proxy-profiles">
+          <legend>Send through it</legend>
+          <label class="checkbox"><input type="checkbox" value="download" checked> Downloads</label>
+          <label class="checkbox"><input type="checkbox" value="indexer"> Indexer searches</label>
+          <label class="checkbox"><input type="checkbox" value="metadata"> Metadata lookups</label>
+          <label class="checkbox"><input type="checkbox" value="subtitle"> Subtitles</label>
+        </fieldset>
+        <p class="hint">
+          Proxied indexer searches need metadata and subtitles proxied too — a
+          lookup says what this instance holds as plainly as a search says what
+          it wants — and cannot reach an indexer on your own network, which the
+          proxy is not on.
+        </p>
+        <label for="proxy-current">Your password</label>
+        <input id="proxy-current" type="password" maxlength="200" autocomplete="current-password" required>
+        <label for="proxy-code">Authenticator code</label>
+        <input id="proxy-code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required>
+        <button type="submit" class="primary">Save</button>
+      </form>
+      <div id="proxy-actions" class="actions"></div>
+    </section>
+
+    <section class="view" data-view="start" hidden>
+      <h2>Getting started</h2>
+      <p class="hint">
+        What this instance needs to find, fetch and describe what you want.
+        Each step is an ordinary setting on its own tab and can be changed at
+        any time; skip any you do not need.
+      </p>
+      <div id="start-steps" class="list"></div>
+      <p class="hint">
+        Music comes from MusicBrainz and books from Open Library. Neither needs
+        an account or a key.
+      </p>
     </section>
 
     <section class="view" data-view="discover" hidden>

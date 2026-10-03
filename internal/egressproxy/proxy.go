@@ -232,8 +232,19 @@ func sameSetting(a, b Setting) bool {
 	return a.Address == b.Address && a.Username == b.Username && slices.Equal(a.Profiles, b.Profiles)
 }
 
-// Save validates and stores a proxy. It applies on restart.
+// Save validates and stores a proxy. It applies on restart. A blank password
+// keeps the stored one when the proxy and account are the same: the form never
+// holds it. It is never carried to another proxy or account.
 func (c *Controller) Save(ctx context.Context, s Setting) error {
+	if s.Password == "" {
+		stored, _, err := c.store.Load(ctx)
+		if err != nil {
+			return err
+		}
+		if stored.Address == s.Address && stored.Username == s.Username {
+			s.Password = stored.Password
+		}
+	}
 	if err := Validate(c.base, s, c.getenv); err != nil {
 		return err
 	}

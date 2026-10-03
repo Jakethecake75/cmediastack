@@ -36,6 +36,8 @@
     /* What is popular, and a request beside each (ADR-0043). */
     { id: 'discover',  label: 'Discover',  perm: 'media.browse' },
     { id: 'requests',  label: 'Requests',  perm: 'request.submit' },
+    /* A checklist over the settings below, for a new instance (ADR-0065). */
+    { id: 'start',     label: 'Getting started', perm: 'admin.system' },
     { id: 'storage',   label: 'Storage',   perm: 'library.root_folders' },
     { id: 'indexers',  label: 'Indexers',  perm: 'admin.indexers' },
     /* The provider's key and the tunnel. Both were reachable only with curl,
@@ -4498,6 +4500,186 @@
   // network
   // -------------------------------------------------------------------------
 
+  // -------------------------------------------------------------------------
+  // SOCKS5 proxy from the web, and restarting (ADR-0065)
+  // -------------------------------------------------------------------------
+
+  var PROXY_PAIRED = ['metadata', 'subtitle'];
+
+  function proxyBoxes() {
+    return Array.prototype.slice.call($('proxy-profiles').querySelectorAll('input[type=checkbox]'));
+  }
+
+  /* Proxied searches with direct metadata is a combination the lint refuses,
+   * so ticking searches ticks and holds the two that must go with it. */
+  function syncProxyBoxes() {
+    var boxes = proxyBoxes();
+    var indexer = boxes.filter(function (b) { return b.value === 'indexer'; })[0];
+    boxes.forEach(function (b) {
+      if (PROXY_PAIRED.indexOf(b.value) >= 0) {
+        if (indexer.checked) { b.checked = true; }
+        b.disabled = indexer.checked;
+      }
+    });
+  }
+
+  function showProxy(p, problem) {
+    var box = $('proxy-status');
+    var actions = $('proxy-actions');
+    if (!box) { return; }
+    clear(box);
+    clear(actions);
+    if (problem) { box.appendChild(el('div', 'item why', problem)); return; }
+    if (!p) { return; }
+    var stored = p.stored || {};
+    var inForce = p.in_force || {};
+    if (p.problem) {
+      box.appendChild(el('div', 'item why', 'The saved proxy fails the configuration check, so the traffic ' +
+        'it would carry is BLOCKED until it is changed: ' + p.problem));
+    }
+    box.appendChild(row(inForce.address ? 'In use: ' + inForce.address : 'No proxy in use',
+      inForce.address ? 'carrying ' + (inForce.profiles || []).join(', ') +
+        (inForce.username ? ' · as ' + inForce.username : '') : 'traffic leaves by this machine\'s own address'));
+    if ((p.file_set || []).length) {
+      box.appendChild(row('Set in the configuration file', (p.file_set || []).join(', ') +
+        ' keep the file\'s setting; the proxy does not change them'));
+    }
+    if (p.differs) {
+      box.appendChild(el('div', 'item why', 'Saved' + (stored.address ? ' (' + stored.address + ')' : ' (no proxy)') +
+        ' — it applies when the server restarts.'));
+      actions.appendChild(button('Restart now', 'primary', restartServer));
+    }
+    $('proxy-address').value = stored.address || '';
+    $('proxy-user').value = stored.username || '';
+    var ticked = stored.address ? (stored.profiles || []) : ['download'];
+    proxyBoxes().forEach(function (b) { b.checked = ticked.indexOf(b.value) >= 0; });
+    syncProxyBoxes();
+  }
+
+  function restartServer(btn) {
+    btn.disabled = true;
+    api('POST', '/api/v1/admin/system/restart').then(function (r) {
+      if (r.status !== 202) { btn.disabled = false; fail(r, 'could not restart'); return; }
+      ok('Restarting…');
+      var tries = 0;
+      /* The server stops answering, then answers again: wait for that. */
+      var poll = function () {
+        tries++;
+        api('GET', '/api/v1/me').then(function (res) {
+          if (res.status === 200 && tries > 1) { ok('Restarted.'); loaders.network(); return; }
+          if (tries < 60) { setTimeout(poll, 1000); } else { btn.disabled = false; refuse('It has not come back after a minute: look at the server\'s log.'); }
+        }, function () { if (tries < 60) { setTimeout(poll, 1000); } });
+      };
+      setTimeout(poll, 1500);
+    });
+  }
+
+  function wireProxyForm() {
+    var form = $('proxy-form');
+    if (!form) { return; }
+    proxyBoxes().forEach(function (b) { b.addEventListener('change', syncProxyBoxes); });
+    submit(form, function () {
+      var body = {
+        address: $('proxy-address').value.trim(),
+        username: $('proxy-user').value.trim(),
+        password: $('proxy-password').value,
+        profiles: proxyBoxes().filter(function (b) { return b.checked; }).map(function (b) { return b.value; }),
+        current_password: $('proxy-current').value,
+        code: $('proxy-code').value.trim()
+      };
+      /* Secrets leave the form at once, whatever the answer. */
+      $('proxy-password').value = '';
+      $('proxy-current').value = '';
+      $('proxy-code').value = '';
+      return api('PUT', '/api/v1/admin/egress/proxy', body).then(function (res) {
+        if (res.status !== 200) { return fail(res, 'could not save the proxy'); }
+        ok(body.address ? 'Saved. It applies when the server restarts.' : 'Removed. That applies when the server restarts.');
+        loaders.network();
+      });
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Getting started: a checklist over the settings that already exist
+  // -------------------------------------------------------------------------
+
+  var INSTALLER_FOLDERS = [
+    { path: '/media/movies', kind: 'movies', label: 'Films' },
+    { path: '/media/tv', kind: 'series', label: 'Series' },
+    { path: '/media/music', kind: 'music', label: 'Music' },
+    { path: '/media/books', kind: 'books', label: 'Books' }
+  ];
+
+  function addInstallerFolders(btn, have) {
+    btn.disabled = true;
+    var todo = INSTALLER_FOLDERS.filter(function (f) { return have.indexOf(f.path) < 0; });
+    var refused = [];
+    var next = function (i) {
+      if (i >= todo.length) {
+        btn.disabled = false;
+        if (refused.length) { refuse(refused.join(' · ')); } else { ok('Added the library folders.'); }
+        loaders.start();
+        return;
+      }
+      api('POST', '/api/v1/admin/rootfolders', todo[i]).then(function (res) {
+        if (res.status !== 201) { refused.push(todo[i].path + ': ' + failure(res, 'refused')); }
+        next(i + 1);
+      });
+    };
+    next(0);
+  }
+
+  loaders.start = function () {
+    var box = $('start-steps');
+    empty(box, 'Loading…');
+    var get = function (path) {
+      return api('GET', path).then(function (r) { return r.status === 200 ? r.body : null; },
+        function () { return null; });
+    };
+    Promise.all([get('/api/v1/admin/metadata'), get('/api/v1/admin/subtitles'), get('/api/v1/admin/egress'),
+      get('/api/v1/admin/rootfolders'), get('/api/v1/admin/indexers'), get('/api/v1/admin/notifications')])
+      .then(function (r) {
+        var roots = (r[3] && r[3].root_folders) || [];
+        var proxy = r[2] && r[2].proxy && r[2].proxy.stored;
+        var steps = [
+          { title: 'TMDB', done: r[0] && r[0].configured, view: 'metadata',
+            what: 'Films and series are identified, and a series knows what it is missing, with TMDB\'s API Read Access Token.' },
+          { title: 'OpenSubtitles', done: r[1] && r[1].configured, view: 'metadata',
+            what: 'Subtitles are fetched with an OpenSubtitles API key, and an account for more downloads a day.' },
+          { title: 'SOCKS5 proxy', done: proxy && proxy.address, view: 'network',
+            what: 'Without one, downloads leave by this machine\'s own address.' },
+          { title: 'Libraries', done: roots.length > 0, view: 'storage', roots: roots,
+            what: 'A root folder per library: where films, series, music and books live.' },
+          { title: 'An indexer', done: r[4] && (r[4].indexers || []).length > 0, view: 'indexers',
+            what: 'Where searches go: a Torznab or Newznab feed, a Prowlarr or Jackett, or a tracker definition.' },
+          { title: 'Discord', done: r[5] && r[5].configured, view: 'notifications',
+            what: 'Where this instance tells you that something went wrong.' }
+        ];
+        clear(box);
+        steps.forEach(function (s, i) {
+          var item = el('div', 'item');
+          var head = el('div', 'title', (i + 1) + '. ' + s.title);
+          head.appendChild(el('span', 'badge ' + (s.done ? 'good' : 'warn'), s.done ? 'done' : 'not yet'));
+          item.appendChild(head);
+          item.appendChild(el('div', 'meta', s.what));
+          var actions = el('div', 'actions');
+          actions.appendChild(button(s.done ? 'Change' : 'Set it up', s.done ? 'ghost' : 'primary', function () {
+            window.location.hash = '#' + s.view;
+          }));
+          if (s.roots) {
+            var have = s.roots.map(function (rf) { return rf.path; });
+            if (INSTALLER_FOLDERS.some(function (f) { return have.indexOf(f.path) < 0; })) {
+              actions.appendChild(button('Add the installer\'s folders', 'ghost', function (btn) {
+                addInstallerFolders(btn, have);
+              }));
+            }
+          }
+          item.appendChild(actions);
+          box.appendChild(item);
+        });
+      });
+  };
+
   loaders.network = function () {
     var box = $('network-status');
     var actions = $('network-actions');
@@ -4511,6 +4693,7 @@
       if (res.status !== 200 || !res.body) { empty(box, failure(res, 'could not load the network policy')); return; }
       var b = res.body;
       clear(box);
+      showProxy(b.proxy, b.proxy_error);
       if (b.warning) { box.appendChild(el('div', 'item why', b.warning)); }
       var item = el('div', 'item');
       /* With enforcement off the guard reports healthy because nothing is
@@ -4603,6 +4786,7 @@
       wireRootForm();
       wireIndexerForm();
       wireMetadataForm();
+      wireProxyForm();
       wireNotifications();
       wireRequestForm();
       wireAudit();

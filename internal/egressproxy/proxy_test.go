@@ -256,3 +256,41 @@ func TestAProxyStoredSinceBootDiffersFromTheOneInForce(t *testing.T) {
 		}
 	}
 }
+
+// The form never holds the stored password, so a blank one keeps it — but only
+// for the same proxy and account: a password is not carried to another server.
+func TestABlankPasswordKeepsTheStoredOneForTheSameProxy(t *testing.T) {
+	cfg, getenv := base(t)
+	c, _ := testCipher(t)
+	store := NewStore(memSettings{}, c)
+	ctl := NewController(store, cfg, getenv, Status{})
+	if err := ctl.Save(t.Context(), nord); err != nil {
+		t.Fatal(err)
+	}
+	same := nord
+	same.Password, same.Profiles = "", []string{"download"}
+	if err := ctl.Save(t.Context(), same); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := store.Load(t.Context()); got.Password != nord.Password {
+		t.Errorf("a blank password for the same proxy lost the stored one: %q", got.Password)
+	}
+	moved := same
+	moved.Address = "another.proxy.example:1080"
+	if err := ctl.Save(t.Context(), moved); err == nil {
+		t.Error("the same account on another proxy was saved with the old proxy's password")
+	}
+	renamed := same
+	renamed.Username = "another-user"
+	if err := ctl.Save(t.Context(), renamed); err == nil {
+		t.Error("another account on the same proxy was saved with the first account's password")
+	}
+	elsewhere := same
+	elsewhere.Address, elsewhere.Username = "another.proxy.example:1080", ""
+	if err := ctl.Save(t.Context(), elsewhere); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := store.Load(t.Context()); got.Password != "" {
+		t.Errorf("the stored password was carried to another proxy: %q", got.Password)
+	}
+}
