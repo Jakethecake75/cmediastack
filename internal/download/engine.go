@@ -54,6 +54,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -128,6 +129,20 @@ func ConfigFor(dataDir string, listenPort int, profile egress.Profile,
 	var notes []string
 
 	switch {
+	// First, whatever else is true: a proxy carries TCP only, so UDP is off
+	// under one with enforcement on or off (ADR-0065 found it off, the LXC
+	// deployment's default, with DHT and uTP still on beside the proxy).
+	case profile.Mode == egress.ModeSOCKS5 || profile.Mode == egress.ModeHTTPProxy:
+		// An application-level proxy carries TCP and nothing else. Leaving DHT
+		// or uTP on here would put UDP outside the tunnel while the operator
+		// believed otherwise.
+		cfg.EnableDHT, cfg.EnableUTP, cfg.AcceptIncoming = false, false, false
+		notes = append(notes,
+			"DHT is disabled: it is UDP, and a socks5 proxy cannot carry it without leaking",
+			"uTP is disabled for the same reason; transfers are TCP-only",
+			"incoming connections are refused: there is no dial to route through the proxy",
+			"this is the degraded mode. The namespace guard (ADR-0001) keeps DHT and uTP")
+
 	case !enforcing && jailed:
 		// The namespace is doing the work. Application-level proxying is off
 		// and does not need to be on: everything already leaves through the
@@ -144,17 +159,6 @@ func ConfigFor(dataDir string, listenPort int, profile egress.Profile,
 		notes = append(notes, "egress enforcement is off and no network namespace "+
 			"was verified: DHT, uTP and incoming connections are enabled and "+
 			"NOTHING IS TUNNELLED")
-
-	case profile.Mode == egress.ModeSOCKS5 || profile.Mode == egress.ModeHTTPProxy:
-		// An application-level proxy carries TCP and nothing else. Leaving DHT
-		// or uTP on here would put UDP outside the tunnel while the operator
-		// believed otherwise.
-		cfg.EnableDHT, cfg.EnableUTP, cfg.AcceptIncoming = false, false, false
-		notes = append(notes,
-			"DHT is disabled: it is UDP, and a socks5 proxy cannot carry it without leaking",
-			"uTP is disabled for the same reason; transfers are TCP-only",
-			"incoming connections are refused: there is no dial to route through the proxy",
-			"this is the degraded mode. The namespace guard (ADR-0001) keeps DHT and uTP")
 
 	default:
 		// Direct inside the namespace: the kernel carries the guarantee, and
@@ -176,6 +180,8 @@ type Engine struct {
 	cfg   Config
 	guard *egress.Guard
 	notes []string
+	// udpTrackers is false when the profile cannot carry UDP.
+	udpTrackers bool
 
 	// addedAt records when THIS PROCESS added each transfer. The torrent
 	// library does not track it and has no reason to, but a Transfer with a
@@ -252,6 +258,12 @@ func New(cfg Config, guard *egress.Guard, notes []string) (*Engine, error) {
 	// Tracker and metainfo HTTP also goes through the guard. This is a separate
 	// path from peer connections and would otherwise use the default transport.
 	tc.HTTPDialContext = guard.For(ProfileName).DialContext
+	// Announces have a dialer of their own in the library: without this,
+	// tracker traffic left by the host's own route whatever the profile said
+	// (found live, ADR-0065). UDP trackers are dropped from each torrent as it
+	// is added instead (withoutUDPTrackers): the library panics when it cannot
+	// open their socket.
+	tc.TrackerDialContext = guard.For(ProfileName).DialContext
 
 	// Announcing the client and version to every tracker and peer is a
 	// fingerprint the operator gains nothing from.
@@ -271,7 +283,10 @@ func New(cfg Config, guard *egress.Guard, notes []string) (*Engine, error) {
 	client.AddDialer(guardedDialer{dial: guard.For(ProfileName)})
 
 	return &Engine{
-		client: client, cfg: cfg, guard: guard, notes: notes,
+		// UDP trackers only where UDP leaves the way TCP does: not under a
+		// proxy, which carries TCP alone, nor when the profile is blocked.
+		udpTrackers: guard.Profiles()[ProfileName].Mode == egress.ModeDirect,
+		client:      client, cfg: cfg, guard: guard, notes: notes,
 		addedAt: make(map[string]time.Time), now: time.Now,
 	}, nil
 }
@@ -349,12 +364,37 @@ func (e *Engine) Add(ctx context.Context, magnetOrHash string) (Transfer, error)
 		return Transfer{}, ErrEngineClosed
 	}
 
-	t, err := e.client.AddMagnet(magnetOrHash)
+	spec, err := torrent.TorrentSpecFromMagnetUri(magnetOrHash)
+	if err != nil {
+		return Transfer{}, fmt.Errorf("download: adding magnet: %w", err)
+	}
+	t, _, err := e.client.AddTorrentSpec(e.withoutUDPTrackers(spec))
 	if err != nil {
 		return Transfer{}, fmt.Errorf("download: adding magnet: %w", err)
 	}
 	e.noteAdded(t.InfoHash().HexString())
 	return e.transferOf(t), nil
+}
+
+// withoutUDPTrackers drops udp:// trackers when the profile cannot carry UDP.
+func (e *Engine) withoutUDPTrackers(spec *torrent.TorrentSpec) *torrent.TorrentSpec {
+	if e.udpTrackers {
+		return spec
+	}
+	var tiers [][]string
+	for _, tier := range spec.Trackers {
+		var kept []string
+		for _, u := range tier {
+			if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(u)), "udp:") {
+				kept = append(kept, u)
+			}
+		}
+		if len(kept) > 0 {
+			tiers = append(tiers, kept)
+		}
+	}
+	spec.Trackers = tiers
+	return spec
 }
 
 // AddTorrentBytes begins a transfer from a .torrent file's contents.
@@ -369,7 +409,11 @@ func (e *Engine) AddTorrentBytes(data []byte) (Transfer, error) {
 	if err != nil {
 		return Transfer{}, err
 	}
-	t, err := e.client.AddTorrent(mi)
+	spec, err := torrent.TorrentSpecFromMetaInfoErr(mi)
+	if err != nil {
+		return Transfer{}, fmt.Errorf("download: adding torrent: %w", err)
+	}
+	t, _, err := e.client.AddTorrentSpec(e.withoutUDPTrackers(spec))
 	if err != nil {
 		return Transfer{}, fmt.Errorf("download: adding torrent: %w", err)
 	}
