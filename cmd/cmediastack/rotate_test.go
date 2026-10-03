@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jakethecake75/cmediastack/internal/authz"
+	"github.com/jakethecake75/cmediastack/internal/egressproxy"
 	"github.com/jakethecake75/cmediastack/internal/identity"
 	"github.com/jakethecake75/cmediastack/internal/indexer"
 	"github.com/jakethecake75/cmediastack/internal/metadata"
@@ -97,10 +98,11 @@ search:
 		t.Fatal(err)
 	}
 	for key, plain := range map[string][2]string{
-		metadata.SealedSetting:   {metadata.SealedContext, "a-tmdb-token"},
-		notify.SealedSetting:     {notify.SealedContext, "https://discord.com/api/webhooks/1/x"},
-		subtitles.SealedKey:      {subtitles.SealedKeyContext, "an-opensubtitles-key"},
-		subtitles.SealedPassword: {subtitles.SealedPasswordContext, "an-opensubtitles-password"},
+		metadata.SealedSetting:    {metadata.SealedContext, "a-tmdb-token"},
+		notify.SealedSetting:      {notify.SealedContext, "https://discord.com/api/webhooks/1/x"},
+		subtitles.SealedKey:       {subtitles.SealedKeyContext, "an-opensubtitles-key"},
+		subtitles.SealedPassword:  {subtitles.SealedPasswordContext, "an-opensubtitles-password"},
+		egressproxy.SealedSetting: {egressproxy.SealedContext, "a-proxy-password"},
 	} {
 		sealed, err := r.oldCiph.EncryptString(plain[1], plain[0])
 		if err != nil {
@@ -138,7 +140,8 @@ func (r *keyRig) opens(t *testing.T, c *secrets.Cipher) map[string]string {
 	}
 	for name, s := range map[string][2]string{"tmdb": {metadata.SealedSetting, metadata.SealedContext},
 		"discord": {notify.SealedSetting, notify.SealedContext}, "os-key": {subtitles.SealedKey, subtitles.SealedKeyContext},
-		"os-password": {subtitles.SealedPassword, subtitles.SealedPasswordContext}} {
+		"os-password": {subtitles.SealedPassword, subtitles.SealedPasswordContext},
+		"proxy":       {egressproxy.SealedSetting, egressproxy.SealedContext}} {
 		var v string
 		if err := r.database.QueryRowContext(t.Context(), `SELECT value FROM setting WHERE key = ?`, s[0]).Scan(&v); err == nil {
 			raw, _ := base64.StdEncoding.DecodeString(v)
@@ -167,7 +170,8 @@ func TestTheMasterKeyIsRotated(t *testing.T) {
 	}
 	want := map[string]string{"totp": "JBSWY3DPEHPK3PXP", "indexer": "an-api-key", "tmdb": "a-tmdb-token",
 		"discord": "https://discord.com/api/webhooks/1/x", "os-key": "an-opensubtitles-key",
-		"os-password": "an-opensubtitles-password", "cardigann": `{"password":"pw","username":"u"}`}
+		"os-password": "an-opensubtitles-password", "cardigann": `{"password":"pw","username":"u"}`,
+		"proxy": "a-proxy-password"}
 	got := r.opens(t, r.newCiph)
 	for k, v := range want {
 		if got[k] != v {
@@ -230,7 +234,7 @@ func TestTheRotateCommand(t *testing.T) {
 	if err := runRotateKey(cfg, stopped, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "7 sealed value(s)") || !strings.Contains(out.String(), "KEEP THE OLD KEY") {
+	if !strings.Contains(out.String(), "8 sealed value(s)") || !strings.Contains(out.String(), "KEEP THE OLD KEY") {
 		t.Errorf("it said:\n%s", out.String())
 	}
 	if got := r.opens(t, r.newCiph); len(got) != len(rotatedKinds) {
@@ -250,7 +254,7 @@ func TestEverySealedValueIsRotated(t *testing.T) {
 	// Each file that seals stored values, and how many kinds it seals.
 	rotated := map[string]int{
 		"identity/store.go": 1, "indexer/store.go": 2, "metadata/service.go": 1, "notify/service.go": 1,
-		"subtitles/service.go": 2,
+		"subtitles/service.go": 2, "egressproxy/proxy.go": 1,
 	}
 	expiring := map[string]bool{"search/ticket.go": true, "identity/pow.go": true}
 	kinds := 0

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jakethecake75/cmediastack/internal/egressproxy"
 	"github.com/jakethecake75/cmediastack/internal/identity"
 	"github.com/jakethecake75/cmediastack/internal/indexer"
 	"github.com/jakethecake75/cmediastack/internal/metadata"
@@ -41,7 +42,7 @@ type sealedRow struct {
 // holds every call that seals with the cipher to this list, or to the two
 // short-lived ones that expire instead (ADR-0054, decision 3).
 var rotatedKinds = []string{"authenticator secret", "indexer API key", "metadata provider token",
-	"Discord webhook", "OpenSubtitles API key", "OpenSubtitles password", "Cardigann indexer settings"}
+	"Discord webhook", "OpenSubtitles API key", "OpenSubtitles password", "Cardigann indexer settings", "SOCKS5 proxy password"}
 
 // sealedRows reads every stored secret.
 func sealedRows(ctx context.Context, tx db.Execer) ([]sealedRow, error) {
@@ -79,11 +80,12 @@ func sealedRows(ctx context.Context, tx db.Execer) ([]sealedRow, error) {
 		return nil, err
 	}
 	// The settings hold base64; empty is unset.
-	for i, s := range []struct{ key, context string }{
-		{metadata.SealedSetting, metadata.SealedContext},
-		{notify.SealedSetting, notify.SealedContext},
-		{subtitles.SealedKey, subtitles.SealedKeyContext},
-		{subtitles.SealedPassword, subtitles.SealedPasswordContext},
+	for _, s := range []struct{ kind, key, context string }{
+		{rotatedKinds[2], metadata.SealedSetting, metadata.SealedContext},
+		{rotatedKinds[3], notify.SealedSetting, notify.SealedContext},
+		{rotatedKinds[4], subtitles.SealedKey, subtitles.SealedKeyContext},
+		{rotatedKinds[5], subtitles.SealedPassword, subtitles.SealedPasswordContext},
+		{rotatedKinds[7], egressproxy.SealedSetting, egressproxy.SealedContext},
 	} {
 		var value string
 		err := tx.QueryRowContext(ctx, `SELECT value FROM setting WHERE key = ?`, s.key).Scan(&value)
@@ -95,7 +97,7 @@ func sealedRows(ctx context.Context, tx db.Execer) ([]sealedRow, error) {
 			return nil, fmt.Errorf("the setting %s is not base64: %w", s.key, derr)
 		}
 		key := s.key
-		out = append(out, sealedRow{kind: rotatedKinds[2+i], id: key, context: s.context, sealed: sealed,
+		out = append(out, sealedRow{kind: s.kind, id: key, context: s.context, sealed: sealed,
 			write: func(ctx context.Context, tx db.Execer, b []byte) error {
 				_, err := tx.ExecContext(ctx, `UPDATE setting SET value = ? WHERE key = ?`,
 					base64.StdEncoding.EncodeToString(b), key)

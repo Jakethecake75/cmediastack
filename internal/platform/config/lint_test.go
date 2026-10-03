@@ -102,3 +102,19 @@ func TestTheLintAgreesWithTheDialerAboutPrivateAddresses(t *testing.T) {
 		}
 	}
 }
+
+// A password set from the web (ADR-0065) is held on the profile itself, never
+// in the file, and satisfies the rule that a username needs a password.
+func TestAnOverlaidPasswordSatisfiesTheUsernameRule(t *testing.T) {
+	cfg := Default()
+	cfg.Egress.Profiles["download"] = EgressProfile{Mode: EgressSOCKS5, Address: "p:1080",
+		Username: "u", Password: "pw", RemoteDNS: true}
+	if err := Lint(cfg, withKey); err != nil {
+		t.Errorf("an overlaid password: %v", err)
+	}
+	cfg.Egress.Profiles["download"] = EgressProfile{Mode: EgressSOCKS5, Address: "p:1080",
+		Username: "u", RemoteDNS: true}
+	if err := Lint(cfg, withKey); err == nil || !strings.Contains(err.Error(), "password_env") {
+		t.Errorf("a username with no password at all: %v, want the password_env complaint", err)
+	}
+}

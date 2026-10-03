@@ -211,6 +211,9 @@ type EgressProfile struct {
 	// the environment variable named by PasswordEnv, never from the file.
 	Username    string `yaml:"username"`
 	PasswordEnv string `yaml:"password_env"`
+	// Password is set only by a proxy saved from the web (ADR-0065), laid over
+	// the file at boot. It is never read from the file.
+	Password string `yaml:"-"`
 	// RemoteDNS selects socks5h semantics: hostnames are resolved by the
 	// proxy, never by the host resolver.
 	RemoteDNS bool `yaml:"remote_dns"`

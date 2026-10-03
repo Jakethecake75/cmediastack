@@ -147,7 +147,7 @@ func Lint(cfg Config, getenv func(string) string) error {
 			if _, _, err := net.SplitHostPort(prof.Address); err != nil {
 				p = append(p, fmt.Sprintf("egress.profiles.%s address %q is not host:port", name, prof.Address))
 			}
-			if prof.Username != "" && prof.PasswordEnv == "" {
+			if prof.Username != "" && prof.PasswordEnv == "" && prof.Password == "" {
 				p = append(p, fmt.Sprintf("egress.profiles.%s sets a username but no password_env; "+
 					"proxy passwords are read from the environment, never from the config file", name))
 			}

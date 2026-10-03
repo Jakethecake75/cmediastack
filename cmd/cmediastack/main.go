@@ -1292,11 +1292,15 @@ func egressProfiles(cfg config.Config) map[string]egress.Profile {
 
 	out := make(map[string]egress.Profile, len(cfg.Egress.Profiles))
 	for name, p := range cfg.Egress.Profiles {
+		password := p.Password // a proxy saved from the web (ADR-0065)
+		if password == "" {
+			password = os.Getenv(p.PasswordEnv)
+		}
 		out[name] = egress.Profile{
 			Mode:      egress.Mode(p.Mode),
 			Address:   p.Address,
 			Username:  p.Username,
-			Password:  os.Getenv(p.PasswordEnv),
+			Password:  password,
 			RemoteDNS: p.RemoteDNS,
 			// A profile that is not in the map above defaults to false here,
 			// but a profile that is not in the CONFIG does not reach this loop
