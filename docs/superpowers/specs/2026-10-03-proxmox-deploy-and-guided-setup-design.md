@@ -78,7 +78,12 @@ The app's own pre-upgrade backup and migrations run at start as they do today.
   `server.tls_cert_file`/`tls_key_file` pointing at a self-signed certificate
   (`openssl req -x509`, EC P-256, ten years, SANs for the IP and the hostname),
   `database.path: /var/lib/cmediastack/cmediastack.db`,
-  `download.data_dir: /media/downloads`.
+  `download.data_dir: /media/downloads`, `download.enabled: true`, and
+  `egress.anonymity_enabled: false` with `egress.require_namespace_guard:
+  false` — there is no tunnel or namespace in this container; SOCKS5 set from
+  the web is its egress control, and a socks5 profile fails closed by itself.
+  The script says that until a proxy is set, downloads leave by the
+  container's own address.
   TLS is not optional here: the app marks its session cookie `Secure` unless
   the base URL is `http://localhost`, so plain HTTP on a LAN address cannot sign
   in at all.
@@ -101,16 +106,20 @@ browser goes to a new admin page, **Getting started**. It stays in the admin
 menu afterwards; nothing records that it was "finished", because every step is
 an ordinary setting that can be changed later.
 
-Each step shows whether it is done, can be skipped, and saves through the
-endpoint that already exists for it:
+It is a checklist, not a second copy of each form: each step reads the
+setting's own status and shows whether it is done, and its button opens the tab
+that already sets it. Skipping a step is not opening it. The steps:
 
-1. **TMDB** — the API Read Access Token (`PUT /api/v1/admin/metadata/token`).
-2. **OpenSubtitles** — key, account, languages (`PUT /api/v1/admin/subtitles`).
-3. **SOCKS5 proxy** — §5 (new).
-4. **Libraries** — root folders, offered pre-filled with the five `/media/…`
-   folders the install created (`POST /api/v1/admin/rootfolders`).
-5. **An indexer** — Torznab/Newznab/Cardigann (`POST /api/v1/admin/indexers`).
-6. **Discord** — the webhook (`PUT /api/v1/admin/notifications/webhook`).
+1. **TMDB** — the API Read Access Token (Metadata tab).
+2. **OpenSubtitles** — key, account, languages (Metadata tab).
+3. **SOCKS5 proxy** — §5 (Network tab, new).
+4. **Libraries** — root folders (Storage tab). This step alone also offers one
+   button that adds the four library folders the install created —
+   `/media/movies`, `/media/tv`, `/media/music`, `/media/books` — through
+   `POST /api/v1/admin/rootfolders`, skipping any already added or absent.
+   `/media/downloads` is the download directory, not a library.
+5. **An indexer** — Torznab/Newznab/Cardigann (Indexers tab).
+6. **Discord** — the webhook (Notifications tab).
 
 MusicBrainz and Open Library need no account, and the page says so rather than
 leaving the reader to wonder.
@@ -122,9 +131,10 @@ nothing else: the tunnel
 interface, the namespace guard, the kill switch and the probe stay in the file,
 and `PATCH /api/v1/admin/egress` still answers 409.
 
-**What is stored** (migration 0037, one row): the proxy's `host:port`, a
-username, the password sealed with the master key (context `egress:proxy`,
-added to `rotatedKinds`), and which profiles use it — `download`, `indexer`,
+**What is stored**, in the `setting` table beside the other web-set
+credentials (no migration): the proxy's `host:port`, a username, the password
+sealed with the master key (context `egress:proxy`, added to `rotatedKinds`),
+and which profiles use it — `download`, `indexer`,
 `metadata`, `subtitle`. `download` is ticked by default; `notification` and
 `update` are never offered.
 
@@ -140,16 +150,27 @@ added to `rotatedKinds`), and which profiles use it — `download`, `indexer`,
 - Every change is audited (`egress.proxy.changed`, old and new address, never a
   password) and **sent to Discord whatever the category settings say** — the
   operator learns of a change they did not make.
-- The response says the change applies on restart. `GET` shows what is stored,
-  what is in force now, and whether they differ. Clearing it is the same call
+- The address, username, profiles and the overlaid result are checked by the
+  same security lint the boot runs, before anything is stored: a combination
+  the lint refuses (a proxied indexer with direct metadata, say) is refused
+  here with the lint's own words, not discovered at the next start.
+- The response says the change applies on restart. The existing
+  `GET /api/v1/admin/egress` gains a `proxy` object: what is stored (never the
+  password), what is in force now, whether they differ, and which profiles the
+  file set. Clearing it is the same call
   with the proxy removed.
 
 **Applying it** — at boot, after the config file and environment are read and
 before the security lint: each ticked profile the file leaves `direct` becomes
 `socks5` with the stored address and credentials and `remote_dns: true`. A
 profile the file sets to anything else keeps the file's setting, and the screen
-names it as set in the file. The lint then runs on the result exactly as today:
-a proxy that cannot be reached fails closed, it never falls back to direct.
+names it as set in the file. The lint then runs on the result. If it refuses
+— the file changed since the proxy was saved — the ticked profiles are set to
+`blocked` instead, the lint's words are logged at ERROR and shown in the
+`proxy` status, and the app starts: traffic meant for the proxy goes nowhere,
+never direct, and the screen that fixes it stays reachable. A proxy that cannot
+be reached fails closed the same way, as every socks5 profile does today.
+The overlay does not touch `anonymity_enabled` or the kill switch.
 
 **Restart** — `POST /api/v1/admin/system/restart`, admin-only, audited: the
 same graceful stop as SIGTERM, then exit status 3 so that `Restart=always`
