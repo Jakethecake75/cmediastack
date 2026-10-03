@@ -108,6 +108,11 @@ filesystem access and a restart, it is reviewable in a diff, and the security
 lint gets to refuse an unsafe combination before the process starts. 409 and not
 501: the endpoint is not unfinished, it is closed.
 
+*Superseded in part by [ADR-0065](0065-socks5-from-the-web.md) (2026-10-03): one
+SOCKS5 proxy can be set from the web, with the password, a fresh authenticator
+code, an audit line, a Discord message and a restart. Everything else here — the
+tunnel, the namespace guard, the kill switch, and this 409 — stands.*
+
 **The leak test does not prove the absence of a leak, and says so in its own
 response body.** Nothing running inside the jail can prove that — a leak by
 definition takes a path the process cannot observe. What it proves is that

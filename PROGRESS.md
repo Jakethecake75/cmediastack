@@ -51,6 +51,8 @@ acquisition for a settled season it wants all of, and imported file by file.
 6n matches, searches and files daily series by their air dates.
 Phase 6 stops at 6n (2026-10-03): the owner deferred audiobooks and anime's
 absolute numbering, to be added if they are needed.
+Phase 7 is the Proxmox deployment: 7a sets a SOCKS5 proxy from the web and adds
+Getting started; the install scripts and releases follow.
 **Scope change, 2026-09-26:** the operator is starting a new library rather than
 migrating one. Migrating from Sonarr is dropped; the Radarr importer (4g) stays,
 and does nothing unless a Radarr database is placed in its directory
@@ -63,7 +65,7 @@ and does nothing unless a Radarr database is placed in its directory
 | | |
 |---|---|
 | Go packages | 37 |
-| Tests | 1451, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Tests | 1455, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached (run again at 6l, after 6h made `golang.org/x/net/html` reached code). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
 | Routes registered | 151 (15 anonymous, 51 admin-hidden, 19 session-only). **0 of 151 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
@@ -5181,6 +5183,57 @@ remaining one also says which episode the file is.
 
 ---
 
+## Phase 7 — the Proxmox deployment
+
+### Increment 7a — a SOCKS5 proxy from the web, and Getting started ✅
+
+The Proxmox deployment runs the app in an LXC container with no WireGuard
+namespace, and the operator asked for every login and key to be asked for on
+the web page, the SOCKS5 proxy included.
+[ADR-0065](docs/adr/0065-socks5-from-the-web.md) was written first; it
+supersedes ADR-0013's file-only egress for the proxy alone.
+
+| What | How |
+|---|---|
+| **One SOCKS5 proxy, set from the Network tab** | Address, username, password and which of downloads, indexer searches, metadata and subtitles use it. Stored in the `setting` table, the password sealed under `egress:proxy` and rotated by `-rotate-key` (`internal/egressproxy`) |
+| **Guarded** | `PUT /api/v1/admin/egress/proxy` is hidden and session-only, and takes the password and a fresh authenticator code (`identity.Reauthenticate`: no recovery code, no replay, failures count toward lockout). Audited without the password, sent to Discord whatever the categories say |
+| **Checked by the boot's lint before it is kept** | The would-be result is linted; a proxied indexer with direct metadata is refused in the lint's words |
+| **Applied on restart** | Laid over the file's direct profiles at boot. A result the lint refuses blocks those profiles instead — never direct, and the app still starts. `POST /api/v1/admin/system/restart` stops gracefully and exits 3, which systemd and Docker restart |
+| **Getting started** | A checklist for a new instance — TMDB, OpenSubtitles, the proxy, libraries, an indexer, Discord — each read from its own setting and opening its tab. One button adds the installer's four library folders. The authenticator enrolment lands there |
+
+#### Found along the way
+
+| # | What | Status |
+|---|---|---|
+| 1 | **Tracker announces bypassed the egress guard.** The engine set the torrent library's `HTTPDialContext`, but announces dial through `TrackerDialContext`, which was never set — so they left by the host's own route whatever the profile said. Inside ADR-0001's namespace the kernel still contained them; under a proxy they disclosed the operator's address to every tracker. Found on the running binary: the SOCKS5 stand-in saw nothing while the queue said *downloading* | Fixed: announces dial through the guard; `download.TestTrackerAnnouncesGoThroughTheGuard`, with a control |
+| 2 | **With enforcement off, a socks5 download profile kept DHT, uTP and incoming connections on**, because `ConfigFor` tested "enforcement off" before "a proxy" — UDP beside a proxy that carries TCP. Off is this deployment's default | Fixed: the proxy case comes first; `download.TestAProxyProfileForcesUDPOffWithoutEnforcement` |
+| 3 | Refusing a UDP tracker's socket makes the library panic, so a hostile torrent could have stopped the process | UDP trackers are dropped from a torrent or magnet as it is added when the profile cannot carry UDP; `download.TestUDPTrackersAreRefusedUnderAProxy` |
+
+#### Verified
+
+Every row above is mutation-verified: fifty-seven mutations, fifty-six killed
+and one equivalent. Nine needed more work — four malformed and rewritten; the
+equivalent one, a host:port check the lint already makes, deleted; four showing
+gaps the tests now cover (an address, username or profiles change since boot,
+and a blank password offered for another proxy).
+
+**On the running binary**, under a loop that restarts it on exit status 3 as
+systemd does, with a SOCKS5 stand-in that logs every CONNECT:
+
+- After enrolment the browser lands on Getting started; *Add the installer's
+  folders* added the four and marked Libraries done.
+- The proxy card refused a wrong authenticator code, saved with the right one
+  and said it applies on restart; *Restart now* exited 3, the loop started it
+  again, and the card showed the proxy in use.
+- The engine came back with DHT, uTP and incoming connections off, and a grab's
+  tracker announce reached the stand-in as
+  `CONNECT tracker.cms-live.test:6969 user=svc-user` — by hostname, so DNS went
+  through the proxy too. Before the fix above, it reached nothing.
+
+Screenshots: `Claude outputs/7a-*.png`.
+
+---
+
 ## Decisions locked
 
 | # | Decision | ADR |
@@ -5249,6 +5302,7 @@ remaining one also says which episode the file is.
 | 62 | With upgrades on, an album held lossy is searched weekly for a lossless release, after the wanted albums; lossless over lossy is the only upgrade | [0062](docs/adr/0062-upgrading-albums-to-lossless.md) |
 | 63 | A series' *season folders* switch, on by default, for what is imported from now on; nothing is moved | [0063](docs/adr/0063-season-folders.md) |
 | 64 | A release dated the day an episode aired is that episode, wherever it is matched or filed; a daily series is searched by date | [0064](docs/adr/0064-daily-series.md) |
+| 65 | One SOCKS5 proxy can be set from the web, with the password, a fresh code, an audit line, Discord and a restart; the rest of egress stays in the file | [0065](docs/adr/0065-socks5-from-the-web.md) |
 | 9 | Opaque server-side sessions, not JWTs | See the header comment in `internal/identity/session.go` — immediate revocation is a hard requirement, and a self-contained token cannot do it without the database lookup a JWT exists to avoid |
 
 ### Defaults taken in the absence of an answer — override any of these

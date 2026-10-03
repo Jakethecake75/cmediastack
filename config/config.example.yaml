@@ -165,6 +165,10 @@ egress:
     update:
       mode: "blocked" # no phone-home
 
+  # A SOCKS5 proxy can also be set from the web, on the Network tab
+  # (ADR-0065): it is laid over the profiles left "direct" here, at restart.
+  # A profile set to anything else here keeps this file's setting.
+  #
   # Example of a proxied download profile. remote_dns selects socks5h
   # semantics: hostnames are resolved by the proxy, never by the host resolver.
   # The lint refuses to boot on socks5 without it.

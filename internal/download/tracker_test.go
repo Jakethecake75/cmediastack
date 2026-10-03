@@ -102,7 +102,7 @@ func TestTrackerAnnouncesGoThroughTheGuard(t *testing.T) {
 }
 
 func TestUDPTrackersAreRefusedUnderAProxy(t *testing.T) {
-	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	pc, err := (&net.ListenConfig{}).ListenPacket(t.Context(), "udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}

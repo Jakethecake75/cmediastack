@@ -64,8 +64,8 @@ func (h *Handlers) EgressStatus(w http.ResponseWriter, r *http.Request) {
 		"enforcing":        h.egress.Enforcing(),
 		"tunnel_interface": h.egress.TunnelInterface(),
 		"profiles":         profiles,
-		"note": "Egress policy is set in the configuration file and cannot be changed at runtime. " +
-			"See PATCH /api/v1/admin/egress.",
+		"note": "Egress policy is set in the configuration file and cannot be changed at runtime, " +
+			"except the SOCKS5 proxy (PUT /api/v1/admin/egress/proxy, ADR-0065), which applies on restart.",
 	}
 	if h.proxy != nil {
 		st, err := h.proxy.Status(r.Context())
