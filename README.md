@@ -3,8 +3,28 @@
 One self-hosted service that replaces Radarr, Sonarr, Lidarr, Readarr, Bazarr,
 Prowlarr, qBittorrent, Jellyseerr and Jellyfin.
 
-**Status: Phase 4 (Playback), increments 4a–4x** — the counts, and what is and is not
-built, are in [`PROGRESS.md`](PROGRESS.md). The full account lifecycle works end
+## Install on Proxmox
+
+In the Proxmox VE host's shell:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Jakethecake75/cmediastack/main/ct/cmediastack.sh)"
+```
+
+It asks for default or advanced settings, creates an unprivileged Debian 12
+container (2 cores, 2 GB, 64 GB — your media lives in it), installs the latest
+release, and prints the address to open: `https://<container-ip>:8443/setup`.
+Open it straight away — whoever does becomes the administrator — and sign in;
+**Getting started** then asks for TMDB, OpenSubtitles, a SOCKS5 proxy, the
+libraries, an indexer and Discord. Run the same line inside the container to
+update it. [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §0 has the details; the Docker
+deployment is §1 onwards.
+
+## Status
+
+**Phases 1–6 complete; Phase 7 (the Proxmox deployment) under way** — the counts, and
+what is and is not built, are in [`PROGRESS.md`](PROGRESS.md). What follows is how it
+got here. The full account lifecycle works end
 to end **in a browser**: first-run wizard → administrator → login → authenticator
 enrollment → working session, plus signup, invites, admin approval, per-device
 session management, scoped API tokens, password reset, and suspension that kills

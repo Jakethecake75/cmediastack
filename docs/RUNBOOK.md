@@ -15,6 +15,60 @@ The commands the binary prints use the container's.
 
 ---
 
+## 0. Proxmox: one container, one command
+
+The quickest deployment, and the one Getting started is written for. In the
+Proxmox VE host's shell:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Jakethecake75/cmediastack/main/ct/cmediastack.sh)"
+```
+
+`ct/cmediastack.sh` asks for **default** settings (next free ID, `cmediastack`,
+2 cores, 2048 MB, 64 GB, DHCP on `vmbr0`, the first storage that takes
+containers) or **advanced** ones, then:
+
+- downloads the newest Debian 12 template with `pveam` if it is missing;
+- creates an **unprivileged** container with **`nesting=1`** — the media-parser
+  sandbox (ADR-0020) needs nesting to create its namespaces — and starts it;
+- runs `install/cmediastack-install.sh` inside it, which installs ffmpeg, a
+  `cmediastack` system user, the latest release (checked against its
+  `SHA256SUMS`), a master key, a self-signed certificate and a hardened systemd
+  unit, and starts it.
+
+Then:
+
+1. **Open `https://<container-ip>:8443/setup` at once.** Whoever reaches it
+   first becomes the only administrator. The browser warns about the
+   self-signed certificate once.
+2. **Copy the master key** somewhere that is not the container — it unlocks
+   every stored credential and every backup:
+   `pct exec <id> -- cat /etc/cmediastack/cmediastack.env`.
+3. Sign in, enrol an authenticator, and follow **Getting started**: TMDB,
+   OpenSubtitles, a SOCKS5 proxy, *Add the installer's folders*, an indexer,
+   Discord. Each is an ordinary setting you can change later.
+
+**Downloads and privacy.** There is no WireGuard namespace in this container.
+Until a SOCKS5 proxy is set on the Network tab, downloads leave by the
+container's own address. With one set (ADR-0065: your password and an
+authenticator code, then *Restart now*), the ticked traffic goes through it or
+nowhere, and the engine runs TCP-only, without DHT or uTP.
+
+**Its address.** The certificate and base URL name the container's address.
+Give the container a fixed address or a DHCP reservation; if it changes, run the
+update (below) and it follows.
+
+**Where things are**, inside the container: the binary in `/opt/cmediastack`,
+configuration and the key in `/etc/cmediastack`, the database and backups in
+`/var/lib/cmediastack`, media under `/media/{movies,tv,music,books,downloads}`.
+`journalctl -u cmediastack` is the log.
+
+**Updating.** Run the same one-line command inside the container
+(`pct enter <id>`). It fetches the latest release, checks it, swaps it in, and
+puts the old binary back if the new one does not come up within a minute.
+
+The sections below are the Docker deployment.
+
 ## 1. The host
 
 **Run it in a VM, not an LXC container.** Proxmox's own documentation recommends
