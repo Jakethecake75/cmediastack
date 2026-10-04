@@ -52,6 +52,8 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -189,8 +191,11 @@ type Engine struct {
 	cfg   Config
 	guard *egress.Guard
 	notes []string
-	// udpTrackers is false when the profile cannot carry UDP.
+	// udpTrackers is false when the profile cannot carry UDP; proxiedUDP is
+	// true when it is carried by the proxy, whose names aliases stands in for.
 	udpTrackers bool
+	proxiedUDP  bool
+	aliases     *egress.Aliases
 	conns       *connCounter
 
 	// addedAt records when THIS PROCESS added each transfer. The torrent
@@ -308,10 +313,36 @@ func New(cfg Config, guard *egress.Guard, notes []string) (*Engine, error) {
 	tc.HTTPDialContext = guard.For(ProfileName).DialContext
 	// Announces have a dialer of their own in the library: without this,
 	// tracker traffic left by the host's own route whatever the profile said
-	// (found live, ADR-0065). UDP trackers are dropped from each torrent as it
-	// is added instead (withoutUDPTrackers): the library panics when it cannot
-	// open their socket.
+	// (found live, ADR-0065).
 	tc.TrackerDialContext = guard.For(ProfileName).DialContext
+
+	// UDP trackers (ADR-0067). Direct: the library's own sockets. Under a
+	// socks5 profile, through the proxy's UDP association when it agrees to
+	// one — asked once, here — and otherwise dropped from each torrent as it
+	// is added. A socket that cannot be opened later fails its sends rather
+	// than being refused: the library panics on a refused socket.
+	mode := guard.Profiles()[ProfileName].Mode
+	aliases := egress.NewAliases()
+	udpTrackers, proxiedUDP := mode == egress.ModeDirect, false
+	if mode == egress.ModeSOCKS5 {
+		if pc, err := guard.ListenPacket(ProfileName, aliases); err != nil {
+			notes = append(notes, "UDP trackers are off: the proxy refused UDP ("+err.Error()+"), so only "+
+				"HTTP trackers find peers")
+		} else {
+			_ = pc.Close()
+			udpTrackers, proxiedUDP = true, true
+			notes = append(notes, "UDP trackers go through the proxy, each tracker's name resolved by the proxy")
+			tc.TrackerListenPacket = func(string, string) (net.PacketConn, error) {
+				pc, err := guard.ListenPacket(ProfileName, aliases)
+				if err != nil {
+					// Not returned: the library panics on a refused socket. The
+					// socket fails every send instead, which it handles.
+					return deadPacketConn{err: err, done: make(chan struct{})}, nil //nolint:nilerr // see above
+				}
+				return pc, nil
+			}
+		}
+	}
 
 	// Announcing the client and version to every tracker and peer is a
 	// fingerprint the operator gains nothing from.
@@ -332,9 +363,9 @@ func New(cfg Config, guard *egress.Guard, notes []string) (*Engine, error) {
 	client.AddDialer(guardedDialer{dial: guard.For(ProfileName), count: conns})
 
 	return &Engine{
-		// UDP trackers only where UDP leaves the way TCP does: not under a
-		// proxy, which carries TCP alone, nor when the profile is blocked.
-		udpTrackers: guard.Profiles()[ProfileName].Mode == egress.ModeDirect,
+		udpTrackers: udpTrackers,
+		proxiedUDP:  proxiedUDP,
+		aliases:     aliases,
 		conns:       conns,
 		client:      client, cfg: cfg, guard: guard, notes: notes,
 		addedAt: make(map[string]time.Time), now: time.Now,
@@ -426,9 +457,11 @@ func (e *Engine) Add(ctx context.Context, magnetOrHash string) (Transfer, error)
 	return e.transferOf(t), nil
 }
 
-// withoutUDPTrackers drops udp:// trackers when the profile cannot carry UDP.
+// withoutUDPTrackers drops udp:// trackers when the profile cannot carry UDP,
+// and when the proxy carries them, gives each tracker name its placeholder so
+// the library sends without a lookup and the proxy resolves it (ADR-0067).
 func (e *Engine) withoutUDPTrackers(spec *torrent.TorrentSpec) *torrent.TorrentSpec {
-	if e.udpTrackers {
+	if e.udpTrackers && !e.proxiedUDP {
 		return spec
 	}
 	var tiers [][]string
@@ -437,6 +470,10 @@ func (e *Engine) withoutUDPTrackers(spec *torrent.TorrentSpec) *torrent.TorrentS
 		for _, u := range tier {
 			if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(u)), "udp:") {
 				kept = append(kept, u)
+			} else if e.proxiedUDP {
+				if aliased, ok := e.aliasTracker(u); ok {
+					kept = append(kept, aliased)
+				}
 			}
 		}
 		if len(kept) > 0 {
@@ -446,6 +483,43 @@ func (e *Engine) withoutUDPTrackers(spec *torrent.TorrentSpec) *torrent.TorrentS
 	spec.Trackers = tiers
 	return spec
 }
+
+// aliasTracker replaces a udp:// tracker's host name with its placeholder. An
+// address that is already an IP literal is kept: it needs no lookup.
+func (e *Engine) aliasTracker(raw string) (string, bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Hostname() == "" || u.Port() == "" {
+		return "", false
+	}
+	if _, err := netip.ParseAddr(u.Hostname()); err == nil {
+		return u.String(), true
+	}
+	u.Host = net.JoinHostPort(e.aliases.Alias(strings.ToLower(u.Hostname())).String(), u.Port())
+	return u.String(), true
+}
+
+// deadPacketConn stands in for a UDP association that could not be opened:
+// every send fails and reads wait for Close. The library panics on a refused
+// socket, and a failed send is a failed announce, which it handles.
+type deadPacketConn struct {
+	err  error
+	done chan struct{}
+}
+
+func (d deadPacketConn) ReadFrom([]byte) (int, net.Addr, error) {
+	<-d.done
+	return 0, nil, net.ErrClosed
+}
+func (d deadPacketConn) WriteTo([]byte, net.Addr) (int, error) { return 0, d.err }
+func (d deadPacketConn) Close() error {
+	defer func() { _ = recover() }() // a second Close
+	close(d.done)
+	return nil
+}
+func (d deadPacketConn) LocalAddr() net.Addr              { return &net.UDPAddr{} }
+func (d deadPacketConn) SetDeadline(time.Time) error      { return nil }
+func (d deadPacketConn) SetReadDeadline(time.Time) error  { return nil }
+func (d deadPacketConn) SetWriteDeadline(time.Time) error { return nil }
 
 // AddTorrentBytes begins a transfer from a .torrent file's contents.
 func (e *Engine) AddTorrentBytes(data []byte) (Transfer, error) {

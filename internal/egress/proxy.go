@@ -68,9 +68,8 @@ var socksReplyText = map[byte]string{
 // prevent. profileDialer refuses the profile outright when RemoteDNS is off.
 func dialSOCKS5(ctx context.Context, base *net.Dialer, p Profile, network, address string) (net.Conn, error) {
 	if network != "tcp" && network != "tcp4" && network != "tcp6" {
-		// SOCKS5 UDP ASSOCIATE is not implemented, and NordVPN's endpoints do
-		// not reliably relay UDP anyway (ADR-0001). Saying so beats appearing
-		// to work and silently losing DHT and udp:// trackers.
+		// UDP does not go through a CONNECT: it goes through a UDP association,
+		// Guard.ListenPacket (ADR-0067). Saying so beats appearing to work.
 		return nil, fmt.Errorf("egress: socks5 supports tcp only, not %q", network)
 	}
 
@@ -91,14 +90,16 @@ func dialSOCKS5(ctx context.Context, base *net.Dialer, p Profile, network, addre
 
 	// Every failure below closes the connection and returns. There is no branch
 	// that falls through to a direct dial.
-	if err := socks5Handshake(ctx, conn, p, host, port); err != nil {
+	if _, err := socks5Handshake(ctx, conn, p, cmdConnect, host, port); err != nil {
 		_ = conn.Close()
 		return nil, err
 	}
 	return conn, nil
 }
 
-func socks5Handshake(ctx context.Context, conn net.Conn, p Profile, host string, port uint16) error {
+// socks5Handshake authenticates and sends one request — CONNECT, or UDP
+// ASSOCIATE (ADR-0067) — returning the address the proxy bound for it.
+func socks5Handshake(ctx context.Context, conn net.Conn, p Profile, cmd byte, host string, port uint16) (string, error) {
 	// The context bounds the whole handshake. Without this a proxy that accepts
 	// the TCP connection and then says nothing would hang a download worker
 	// indefinitely.
@@ -116,19 +117,19 @@ func socks5Handshake(ctx context.Context, conn net.Conn, p Profile, host string,
 
 	count, err := oneByte(len(methods))
 	if err != nil {
-		return err
+		return "", err
 	}
 	greeting := append([]byte{socks5Version, count}, methods...)
 	if _, err := conn.Write(greeting); err != nil {
-		return fmt.Errorf("egress: socks5 greeting: %w", err)
+		return "", fmt.Errorf("egress: socks5 greeting: %w", err)
 	}
 
 	resp := make([]byte, 2)
 	if _, err := io.ReadFull(conn, resp); err != nil {
-		return fmt.Errorf("egress: socks5 method reply: %w", err)
+		return "", fmt.Errorf("egress: socks5 method reply: %w", err)
 	}
 	if resp[0] != socks5Version {
-		return fmt.Errorf("egress: socks5 proxy answered version %d, want 5", resp[0])
+		return "", fmt.Errorf("egress: socks5 proxy answered version %d, want 5", resp[0])
 	}
 
 	switch resp[1] {
@@ -136,18 +137,18 @@ func socks5Handshake(ctx context.Context, conn net.Conn, p Profile, host string,
 		// Nothing to do.
 	case authUserPass:
 		if p.Username == "" {
-			return errors.New("egress: socks5 proxy demands a username but none is configured")
+			return "", errors.New("egress: socks5 proxy demands a username but none is configured")
 		}
 		if err := socks5Authenticate(conn, p); err != nil {
-			return err
+			return "", err
 		}
 	case authNoAcceptable:
-		return errors.New("egress: socks5 proxy rejected every authentication method offered")
+		return "", errors.New("egress: socks5 proxy rejected every authentication method offered")
 	default:
-		return fmt.Errorf("egress: socks5 proxy chose unsupported method 0x%02x", resp[1])
+		return "", fmt.Errorf("egress: socks5 proxy chose unsupported method 0x%02x", resp[1])
 	}
 
-	req := []byte{socks5Version, cmdConnect, 0x00}
+	req := []byte{socks5Version, cmd, 0x00}
 	if ip := net.ParseIP(host); ip != nil {
 		if v4 := ip.To4(); v4 != nil {
 			req = append(req, atypIPv4)
@@ -158,11 +159,11 @@ func socks5Handshake(ctx context.Context, conn net.Conn, p Profile, host string,
 		}
 	} else {
 		if len(host) > 255 {
-			return fmt.Errorf("egress: hostname is %d bytes, socks5 allows 255", len(host))
+			return "", fmt.Errorf("egress: hostname is %d bytes, socks5 allows 255", len(host))
 		}
 		n, err := oneByte(len(host))
 		if err != nil {
-			return err
+			return "", err
 		}
 		req = append(req, atypDomain, n)
 		req = append(req, host...)
@@ -170,43 +171,59 @@ func socks5Handshake(ctx context.Context, conn net.Conn, p Profile, host string,
 	req = binary.BigEndian.AppendUint16(req, port)
 
 	if _, err := conn.Write(req); err != nil {
-		return fmt.Errorf("egress: socks5 connect request: %w", err)
+		return "", fmt.Errorf("egress: socks5 connect request: %w", err)
 	}
 
 	head := make([]byte, 4)
 	if _, err := io.ReadFull(conn, head); err != nil {
-		return fmt.Errorf("egress: socks5 connect reply: %w", err)
+		return "", fmt.Errorf("egress: socks5 connect reply: %w", err)
 	}
 	if head[0] != socks5Version {
-		return fmt.Errorf("egress: socks5 reply version %d, want 5", head[0])
+		return "", fmt.Errorf("egress: socks5 reply version %d, want 5", head[0])
 	}
 	if head[1] != replySucceeded {
 		text, ok := socksReplyText[head[1]]
 		if !ok {
 			text = fmt.Sprintf("unknown reply code 0x%02x", head[1])
 		}
-		return fmt.Errorf("egress: socks5 proxy refused: %s", text)
+		return "", fmt.Errorf("egress: socks5 proxy refused: %s", text)
 	}
 
-	// The bound address is of no use to a CONNECT client, but it has to be
-	// drained or it becomes the first bytes of the caller's stream.
+	// The bound address: of no use to a CONNECT client, but it has to be
+	// drained or it becomes the first bytes of the caller's stream — and for
+	// UDP ASSOCIATE it is the relay every datagram goes to.
+	var boundHost string
 	switch head[3] {
 	case atypIPv4:
-		_, err := io.ReadFull(conn, make([]byte, 4+2))
-		return wrapDrain(err)
+		b := make([]byte, 4)
+		if _, err := io.ReadFull(conn, b); err != nil {
+			return "", wrapDrain(err)
+		}
+		boundHost = net.IP(b).String()
 	case atypIPv6:
-		_, err := io.ReadFull(conn, make([]byte, 16+2))
-		return wrapDrain(err)
+		b := make([]byte, 16)
+		if _, err := io.ReadFull(conn, b); err != nil {
+			return "", wrapDrain(err)
+		}
+		boundHost = net.IP(b).String()
 	case atypDomain:
 		n := make([]byte, 1)
 		if _, err := io.ReadFull(conn, n); err != nil {
-			return wrapDrain(err)
+			return "", wrapDrain(err)
 		}
-		_, err := io.ReadFull(conn, make([]byte, int(n[0])+2))
-		return wrapDrain(err)
+		b := make([]byte, int(n[0]))
+		if _, err := io.ReadFull(conn, b); err != nil {
+			return "", wrapDrain(err)
+		}
+		boundHost = string(b)
 	default:
-		return fmt.Errorf("egress: socks5 reply used address type 0x%02x", head[3])
+		return "", fmt.Errorf("egress: socks5 reply used address type 0x%02x", head[3])
 	}
+	pb := make([]byte, 2)
+	if _, err := io.ReadFull(conn, pb); err != nil {
+		return "", wrapDrain(err)
+	}
+	return net.JoinHostPort(boundHost, strconv.Itoa(int(binary.BigEndian.Uint16(pb)))), nil
 }
 
 // oneByte is n as the single byte the SOCKS5 wire format gives a length or a

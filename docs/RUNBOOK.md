@@ -52,7 +52,8 @@ Then:
 Until a SOCKS5 proxy is set on the Network tab, downloads leave by the
 container's own address. With one set (ADR-0065: your password and an
 authenticator code, then *Restart now*), the ticked traffic goes through it or
-nowhere, and the engine runs TCP-only, without DHT or uTP.
+nowhere. UDP trackers go through it too when the proxy relays UDP, as NordVPN's
+does (the Queue's notes say which); DHT and uTP stay off.
 
 **Its address.** The certificate and base URL name the container's address.
 Give the container a fixed address or a DHCP reservation; if it changes, run the
