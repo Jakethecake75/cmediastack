@@ -3293,37 +3293,62 @@
     var forcedUsed = false;
     (list || []).forEach(function (t) {
       if (!t.usable) { return; }
-      var track = document.createElement('track');
-      track.kind = 'subtitles';
-      track.label = subtitleLabel(t);
-      if (t.language) { track.srclang = t.language; }
-      track.src = '/api/v1/files/' + fileId + '/subtitles/' +
-        encodeURIComponent(t.id);
-      /* A forced track is the one the film intends everybody to see — the
-       * signs and the foreign dialogue — so it is the only one turned on
-       * without being asked for. At most one, because the element takes at
-       * most one default. */
-      if (t.forced && !forcedUsed) { track.default = true; forcedUsed = true; }
-      /* A track that fails loads nothing and says nothing: the viewer picks it
-       * from the menu and the picture simply stays bare. Said out loud
-       * instead. */
-      track.addEventListener('error', function () {
-        subtitleComplaint(track.label);
-      });
-      /* A converted stream that started part-way through counts from zero,
-       * so its subtitles are moved back by where it started (ADR-0071). */
-      if (offset > 0) {
-        track.addEventListener('load', function () {
-          var cues = track.track.cues || [];
-          for (var i = 0; i < cues.length; i++) {
-            cues[i].startTime -= offset;
-            cues[i].endTime -= offset;
-          }
-        });
-      }
-      video.appendChild(track);
+      addTrack(video, fileId, t, offset, t.forced && !forcedUsed);
+      if (t.forced) { forcedUsed = true; }
     });
     return video.querySelectorAll('track').length;
+  }
+
+  /* Labels already told they are being prepared, so a retry does not say it
+   * again every 15 seconds. */
+  var preparingSaid = {};
+
+  function addTrack(video, fileId, t, offset, isDefault) {
+    var track = document.createElement('track');
+    track.kind = 'subtitles';
+    track.label = subtitleLabel(t);
+    if (t.language) { track.srclang = t.language; }
+    track.src = '/api/v1/files/' + fileId + '/subtitles/' +
+      encodeURIComponent(t.id);
+    /* A forced track is the one the film intends everybody to see — the
+     * signs and the foreign dialogue — so it is the only one turned on
+     * without being asked for. At most one, because the element takes at
+     * most one default. */
+    if (isDefault) { track.default = true; }
+    /* A track that fails loads nothing and says nothing: the viewer picks it
+     * from the menu and the picture simply stays bare. Said out loud
+     * instead — unless the film's tracks are still being read out of it
+     * (ADR-0074): asked again, the server says 503, and the track is tried
+     * again shortly. */
+    track.addEventListener('error', function () {
+      fetch(track.src, { credentials: 'same-origin' }).then(function (res) {
+        if (track.parentNode !== video) { return; }
+        if (res.status !== 503 && !res.ok) { subtitleComplaint(track.label); return; }
+        if (res.status === 503 && !preparingSaid[track.label]) {
+          preparingSaid[track.label] = true;
+          toast('The ' + track.label + ' subtitles are being read out of the file. ' +
+            'They will appear in a minute or two.');
+        }
+        setTimeout(function () {
+          if (track.parentNode !== video) { return; }
+          video.removeChild(track);
+          addTrack(video, fileId, t, offset, false);
+          restoreSubtitle(video);
+        }, res.ok ? 0 : 15000);
+      }, function () { subtitleComplaint(track.label); });
+    });
+    /* A converted stream that started part-way through counts from zero,
+     * so its subtitles are moved back by where it started (ADR-0071). */
+    if (offset > 0) {
+      track.addEventListener('load', function () {
+        var cues = track.track.cues || [];
+        for (var i = 0; i < cues.length; i++) {
+          cues[i].startTime -= offset;
+          cues[i].endTime -= offset;
+        }
+      });
+    }
+    video.appendChild(track);
   }
 
   function subtitleCount(info) {
@@ -3648,7 +3673,15 @@
     var url = '/api/v1/files/' + watchState.fileId + q;
     var type = convertedType(info, conv.mode, audio);
     if (canFeed(type)) {
-      feedStream(video, url, type);
+      /* A copy starts at the keyframe before the asked-for second; the
+       * server says where, and the clock and subtitles follow (ADR-0074). */
+      feedStream(video, url, type, function (k) {
+        if (!conv || Math.abs(k - conv.start) < 0.05) { return; }
+        conv.start = k;
+        attachSubtitles(video, watchState.fileId, info.subtitle_tracks, k);
+        restoreSubtitle(video);
+        paint();
+      });
     } else {
       stopFeed();
       video.src = url;
@@ -3703,7 +3736,7 @@
     try { return !!type && !!window.MediaSource && MediaSource.isTypeSupported(type); } catch (e) { return false; }
   }
 
-  function feedStream(video, url, type) {
+  function feedStream(video, url, type, onStart) {
     stopFeed();
     var me = { ctl: new AbortController() };
     feed = me;
@@ -3779,6 +3812,8 @@
             message((body && body.error) || 'The server would not convert this file.');
           });
         }
+        var startsAt = Number(res.headers.get('X-Stream-Start'));
+        if (res.headers.get('X-Stream-Start') !== null && isFinite(startsAt)) { onStart(startsAt); }
         reader = res.body.getReader();
         read();
       }).catch(function () {
@@ -4220,16 +4255,32 @@
     for (var i = 0; i < icons.length; i++) {
       icons[i].appendChild(svgIcon(icons[i].getAttribute('data-icon')));
     }
+    /* Chrome, once captions have been on, turns a track on by itself when
+     * new ones are attached (after a jump, for one): the viewer's choice is
+     * put back whenever the list changes. */
+    video.textTracks.addEventListener('change', function () {
+      if (chosenSubtitle === undefined) { return; }
+      var tracks = video.textTracks;
+      for (var i = 0; i < tracks.length; i++) {
+        var want = tracks[i].label === chosenSubtitle ? 'showing' : 'disabled';
+        if (tracks[i].mode !== want) { tracks[i].mode = want; }
+      }
+    });
     $('pl-full').hidden = !document.fullscreenEnabled;
     /* Casting is the browser's own (ADR-0073): Chrome and Edge to a Cast
-     * device, Safari to AirPlay. The button shows while a device can take
-     * this video. */
-    if (video.remote && video.remote.watchAvailability) {
-      video.remote.watchAvailability(function (yes) { $('pl-cast').hidden = !yes; })
-        .catch(function () { /* the browser cannot say: no button */ });
+     * device, Safari to AirPlay. The button is there whenever the browser
+     * can cast at all (ADR-0074), and says why when no device answers. */
+    if (video.remote && video.remote.prompt) {
+      $('pl-cast').hidden = false;
       $('pl-cast').addEventListener('click', function () {
         video.remote.prompt().catch(function (e) {
-          if (e.name !== 'AbortError') { toast('This video cannot be cast from this browser.'); }
+          if (e.name === 'NotFoundError') {
+            toast('No TV or Chromecast was found. It has to be on the same network as this ' +
+              'device; a VPN can hide it.');
+          } else if (e.name !== 'AbortError') {
+            toast('This video cannot be cast from here. The browser\u2019s own menu can cast ' +
+              'the whole tab (\u22ee \u2192 Cast\u2026).');
+          }
         });
       });
       video.remote.addEventListener('connect', function () { toast('Casting.'); });

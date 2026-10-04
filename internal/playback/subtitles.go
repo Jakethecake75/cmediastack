@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jakethecake75/cmediastack/internal/authz"
@@ -46,6 +48,15 @@ import (
 
 // ErrNoSuchSubtitle means the id does not name a track this file has.
 var ErrNoSuchSubtitle = errors.New("playback: no such subtitle track")
+
+// ErrSubtitlesPreparing means a file's subtitles are still being read out of
+// it (ADR-0074). The same request works shortly.
+var ErrSubtitlesPreparing = errors.New("this film's subtitles are still being read out of " +
+	"the file, which takes a few minutes for a large one")
+
+// subtitleWait is how long a request waits for that before saying so. A
+// variable only so a test can shorten it.
+var subtitleWait = 20 * time.Second
 
 // SubtitleTimeout bounds a conversion. Generous for a text file, and short
 // enough that a crafted subtitle cannot occupy a worker.
@@ -112,11 +123,26 @@ func subtitleFormatName(codec string) string {
 type Subtitles struct {
 	streamer *Streamer
 	sandbox  *Sandbox
+
+	// cacheDir, when set, holds each file's embedded text tracks, read out
+	// in one pass (ADR-0074). A track inside a film is spread through the
+	// whole file, so taking one out reads all of it: minutes for a UHD disc,
+	// far past SubtitleTimeout. Read once, every track is then a small file.
+	cacheDir string
+	mu       sync.Mutex
+	reading  map[string]*subtitleRead
+}
+
+// subtitleRead is one file's tracks being read out; err is set before done
+// closes.
+type subtitleRead struct {
+	done chan struct{}
+	err  error
 }
 
 // NewSubtitles builds it.
 func NewSubtitles(s *Streamer, sandbox *Sandbox) *Subtitles {
-	return &Subtitles{streamer: s, sandbox: sandbox}
+	return &Subtitles{streamer: s, sandbox: sandbox, reading: map[string]*subtitleRead{}}
 }
 
 // List reports every subtitle available for a file: the text tracks inside it,
@@ -258,6 +284,34 @@ func (s *Subtitles) Serve(w http.ResponseWriter, r *http.Request, fileID int64,
 		return fmt.Errorf("%w: %s", ErrNoSuchSubtitle, chosen.Why)
 	}
 
+	// An embedded track comes from the cache when there is one (ADR-0074).
+	if chosen.Embedded && s.cacheDir != "" {
+		dest, rd := s.prepare(ctx, fileID, p, tracks)
+		if rd != nil {
+			select {
+			case <-rd.done:
+				if rd.err != nil {
+					return rd.err
+				}
+			case <-time.After(subtitleWait):
+				return ErrSubtitlesPreparing
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		// #nosec G304 -- dest is built from the file's id and size, not a request.
+		cached, err := os.Open(dest)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = cached.Close() }()
+		body, err := s.toWebVTT(ctx, cached, slices.Index(embeddedText(tracks), chosen.index))
+		if err != nil {
+			return err
+		}
+		return writeVTT(w, body)
+	}
+
 	// Which file to open, and which stream to take from it.
 	openPath := chosen.file
 	if chosen.Embedded {
@@ -283,7 +337,10 @@ func (s *Subtitles) Serve(w http.ResponseWriter, r *http.Request, fileID int64,
 	if err != nil {
 		return err
 	}
+	return writeVTT(w, body)
+}
 
+func writeVTT(w http.ResponseWriter, body []byte) error {
 	// text/vtt, and nosniff is already set globally. A subtitle is text chosen
 	// by a stranger, and the reason it is safe is that a <track> element hands
 	// it to the browser's WebVTT parser rather than to its HTML parser. Serving

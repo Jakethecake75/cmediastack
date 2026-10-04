@@ -1,10 +1,12 @@
 package playback
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -178,6 +180,12 @@ func convertArgs(plan RemuxPlan, encoder string, opts StreamOptions) []string {
 	}
 	if opts.Start > 0 && opts.Start < plan.Duration {
 		args = append(args, "-ss", strconv.FormatInt(int64(opts.Start/time.Second), 10))
+		if !plan.TranscodeVideo {
+			// A copied picture starts at the keyframe before the start; the
+			// sound must start there too, or it is ahead of the picture by
+			// as much as a GOP, ten seconds on a UHD disc (ADR-0074).
+			args = append(args, "-noaccurate_seek")
+		}
 	}
 	args = append(args,
 		// fd 3, handed over by the parent. Never a path (ADR-0020).
@@ -315,6 +323,41 @@ var audioCodecsMP4 = map[string]bool{
 	"alac": true, "dts": true,
 }
 
+// keyframeAtOrBefore is where a copy starting at start begins: the first video
+// packet after seeking there, which the demuxer finds at the keyframe at or
+// before it. One packet is read.
+func (r *Remuxer) keyframeAtOrBefore(ctx context.Context, f *os.File, video int,
+	start time.Duration) (time.Duration, bool) {
+
+	res, err := r.sandbox.Run(ctx, 15*time.Second, f, FFprobePath,
+		"-v", "error", "-select_streams", strconv.Itoa(video),
+		"-read_intervals", strconv.FormatInt(int64(start/time.Second), 10)+"%+#1",
+		"-show_entries", "packet=pts_time,flags", "-of", "csv=p=0", "/dev/fd/3")
+	if err != nil {
+		return 0, false
+	}
+	return parseKeyframe(string(res.Stdout), start)
+}
+
+// parseKeyframe reads ffprobe's "pts_time,flags" line for a keyframe no later
+// than start.
+func parseKeyframe(out string, start time.Duration) (time.Duration, bool) {
+	line, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
+	pts, flags, ok := strings.Cut(line, ",")
+	if !ok || !strings.HasPrefix(flags, "K") {
+		return 0, false
+	}
+	sec, err := strconv.ParseFloat(pts, 64)
+	if err != nil || sec < 0 {
+		return 0, false
+	}
+	k := time.Duration(sec * float64(time.Second))
+	if k > start {
+		return 0, false
+	}
+	return k, true
+}
+
 // Remuxer streams converted media.
 type Remuxer struct {
 	streamer *Streamer
@@ -408,6 +451,19 @@ func (r *Remuxer) Stream(w http.ResponseWriter, req *http.Request, fileID int64,
 	defer func() { _ = f.Close() }()
 
 	args := convertArgs(plan, encoder, opts)
+
+	// Where the stream really starts, in the film's time, so the player's
+	// clock and subtitles match the picture (ADR-0074): a copy starts at the
+	// keyframe before the asked-for second, a transcode at that second.
+	startsAt := opts.Start
+	if opts.Start >= plan.Duration {
+		startsAt = 0
+	} else if opts.Start > 0 && !plan.TranscodeVideo {
+		if k, ok := r.keyframeAtOrBefore(req.Context(), f, plan.VideoIndex, opts.Start); ok {
+			startsAt = k
+		}
+	}
+	w.Header().Set("X-Stream-Start", strconv.FormatFloat(startsAt.Seconds(), 'f', 3, 64))
 
 	w.Header().Set("Content-Type", "video/mp4")
 	// Said explicitly. ServeContent is not involved here, and a browser that

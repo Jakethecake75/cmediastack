@@ -577,6 +577,7 @@ func runApp(cfg config.Config, logger *slog.Logger, logRing *logging.Ring) error
 		playback.NewProber(mediaSandbox),
 		playbackPositions,
 		mediaSandbox, logger, cfg.Media.MaxConcurrentTranscodes)
+	playbackSvc.CacheSubtitlesIn(filepath.Join(filepath.Dir(cfg.Database.Path), "subtitles"))
 
 	if err := metadataSvc.Load(ctx); err != nil {
 		// Not fatal. An instance with no working metadata provider is a

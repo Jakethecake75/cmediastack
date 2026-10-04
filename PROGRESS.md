@@ -53,7 +53,7 @@ Phase 6 stops at 6n (2026-10-03): the owner deferred audiobooks and anime's
 absolute numbering, to be added if they are needed.
 Phase 7 is the Proxmox deployment: 7a sets a SOCKS5 proxy from the web and adds
 Getting started, with the install scripts and v0.1.0; 7b (v0.1.1) fixes what the
-first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added, 7i (v0.4.1, v0.4.2) plays in a full-window player that keeps up, and 7j (v0.4.3) lets the player load its own stream, keeps downloads across a restart and casts.
+first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added, 7i (v0.4.1, v0.4.2) plays in a full-window player that keeps up, 7j (v0.4.3) lets the player load its own stream, keeps downloads across a restart and casts, and 7k (v0.4.4) keeps the sound in step, reads subtitles out of a film once, and always shows the cast button.
 **Scope change, 2026-09-26:** the operator is starting a new library rather than
 migrating one. Migrating from Sonarr is dropped; the Radarr importer (4g) stays,
 and does nothing unless a Radarr database is placed in its directory
@@ -66,7 +66,7 @@ and does nothing unless a Radarr database is placed in its directory
 | | |
 |---|---|
 | Go packages | 38 |
-| Tests | 1495, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Tests | 1498, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached (run again at 6l, after 6h made `golang.org/x/net/html` reached code). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
 | Routes registered | 153 (15 anonymous, 51 admin-hidden, 19 session-only). **0 of 153 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
@@ -5568,6 +5568,47 @@ untested against a device.
 
 ---
 
+### Increment 7k (v0.4.4) — sound in step, subtitles read out once, a cast button ✅
+
+Reported after v0.4.3, with the buffering gone: the sound was well out of step,
+the Finnish subtitles of Project Hail Mary "would not load", and there was no
+cast button. [ADR-0074](docs/adr/0074-sync-subtitle-cache-cast-button.md) was
+written first.
+
+**What was found.** A copy started part-way began its picture at the keyframe
+before the asked-for second (one every 10.4 s on this encode) and its re-encoded
+sound at the second: from 0:15, the picture at 0:10.4 and the sound 4.6 s into
+the stream. The player resumes part-way on every open. On the operator's
+server, one embedded subtitle of the 38 GB film was still not out after 45 s;
+the conversion was bounded at 30.
+
+| What | How |
+|---|---|
+| **Sound in step** | A copy or remux that starts part-way passes `-noaccurate_seek`, so both streams start at the keyframe; the server finds it with one ffprobe packet and sends `X-Stream-Start`, and the player moves its clock and subtitles to it |
+| **Subtitles read out once** | Every embedded text track of a film is read out in one pass, as WebVTT, into `subtitles/<file id>-<size>.mkv` beside the database, starting when the player opens the film. A request waits up to 20 s, then answers 503 with `Retry-After`; the player says the subtitles are being read out and tries again. Chrome turning a track on by itself after a jump is undone |
+| **Cast button** | Shown wherever the browser can cast; with no device it says the TV must be on the same network (a VPN can hide it), otherwise it points to the browser's own Cast menu |
+
+#### Verified
+
+| Claim | How it is established |
+|---|---|
+| A copy from 6:14 starts its sound at the keyframe; one from the start, and a transcode, are not told to | `playback.TestACopyStartsItsSoundWithItsPicture` — mutation-verified |
+| The keyframe is read from ffprobe's first packet, a keyframe no later than the asked-for second | `playback.TestTheKeyframeACopyStartsAtIsRead` — mutation-verified |
+| A film's tracks are read out once into the cache, each is served by its place there, and a restarted server serves them with the film out of reach | `playback.TestEmbeddedTracksAreReadOutOnceAndServedFromTheCache` — mutation-verified |
+
+Seven mutations, all killed (two rewritten after they broke the build).
+
+**Measured with Debian 12's ffmpeg**: from 0:15 with `-noaccurate_seek`, the
+first video packet at 0.083 and the first audio packet at 0, as from the start.
+**In Chrome over HTTPS**, locally, on a 3-minute 4K HEVC film with keyframes
+10.4 s apart and two embedded SRT tracks: after a jump to 2:00 the clock read
+2:10 exactly when the cue *AT 2:10* showed; the cache file was written; the
+chosen Finnish track stayed the only one showing after the jump; with the
+first subtitle requests answered 503, the player said so once, tried again
+after 15 s and loaded 18 cues; the cast button showed.
+
+---
+
 ## Decisions locked
 
 | # | Decision | ADR |
@@ -5645,6 +5686,7 @@ untested against a device.
 | 71 | Transcode when the pictures are the problem, with HDR tone-mapped and seeking by restart; adding a title searches for it; Downloads split into downloading and finished | [0071](docs/adr/0071-transcoding-and-grab-on-add.md) |
 | 72 | A full-window player; the original picture copied for a browser that decodes HEVC; a cheaper transcode that the server works ahead on; stalls wait for a buffer and drop to 720p | [0072](docs/adr/0072-a-full-screen-player-and-cheaper-playback.md) |
 | 73 | The player loads a converted stream through Media Source; torrents keep finished pieces across a restart (no part files); casting through the browser's Remote Playback | [0073](docs/adr/0073-player-loading-torrent-resume-casting.md) |
+| 74 | A copy started part-way starts its sound at the keyframe and says where; embedded subtitles read out once into a cache; the cast button always shown | [0074](docs/adr/0074-sync-subtitle-cache-cast-button.md) |
 | 9 | Opaque server-side sessions, not JWTs | See the header comment in `internal/identity/session.go` — immediate revocation is a hard requirement, and a self-contained token cannot do it without the database lookup a JWT exists to avoid |
 
 ### Defaults taken in the absence of an answer — override any of these

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type subRig struct {
@@ -449,5 +450,69 @@ func TestWhatCountsAsACueWithTextInIt(t *testing.T) {
 				t.Errorf("hasCueText = %v, want %v for:\n%q", got, c.want, c.vtt)
 			}
 		})
+	}
+}
+
+// A film's embedded text tracks are read out once, into the cache, and served
+// from there (ADR-0074): a viewer who asks before that is told to wait, and
+// once read, a track is served even with the film itself out of reach.
+func TestEmbeddedTracksAreReadOutOnceAndServedFromTheCache(t *testing.T) {
+	haveFFmpeg(t)
+	s := quietSandbox(t)
+
+	dir := t.TempDir()
+	for name, line := range map[string]string{"a.srt": "First track.", "b.srt": "Second track."} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(
+			"1\n00:00:01,000 --> 00:00:03,000\n"+line+"\n\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	film := filepath.Join(dir, "film.mkv")
+	if out, err := exec.CommandContext(t.Context(), FFmpegPath, "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "testsrc=duration=4:size=160x90:rate=25",
+		"-i", filepath.Join(dir, "a.srt"), "-i", filepath.Join(dir, "b.srt"),
+		"-map", "0", "-map", "1", "-map", "2", "-c:v", "mpeg4", "-c:s", "srt",
+		film).CombinedOutput(); err != nil {
+		t.Skipf("could not build the fixture (%v): %s", err, firstLine(out))
+	}
+
+	files := &fakeFiles{byID: map[int64]FileRef{1: {ID: 1, RootFolderID: 7, RelativePath: "film.mkv"}}}
+	cache := t.TempDir()
+	newSubs := func() *Subtitles {
+		subs := NewSubtitles(NewStreamer(files, &fakeVaults{dirs: map[int64]string{7: dir}}), s)
+		subs.cacheDir = cache
+		return subs
+	}
+	p := Probe{SizeBytes: 1234, Subtitles: []SubtitleStream{
+		{Index: 1, Codec: "subrip", Text: true}, {Index: 2, Codec: "subrip", Text: true}}}
+	serve := func(subs *Subtitles, id string) (string, error) {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil).WithContext(adminContext())
+		w := httptest.NewRecorder()
+		err := subs.Serve(w, req, 1, p, id)
+		return w.Body.String(), err
+	}
+
+	defer func(d time.Duration) { subtitleWait = d }(subtitleWait)
+	subtitleWait = 0
+	subs := newSubs()
+	if _, err := serve(subs, "e2"); err != nil && !errors.Is(err, ErrSubtitlesPreparing) {
+		t.Fatalf("the first request: %v", err)
+	}
+	waitFor(t, "the tracks were never read out", func() bool {
+		_, err := os.Stat(filepath.Join(cache, "1-1234.mkv"))
+		return err == nil
+	})
+
+	// The film goes; a restarted server still has its subtitles.
+	if err := os.Remove(film); err != nil {
+		t.Fatal(err)
+	}
+	subtitleWait = time.Second
+	again := newSubs()
+	for id, want := range map[string]string{"e1": "First track.", "e2": "Second track."} {
+		body, err := serve(again, id)
+		if err != nil || !strings.Contains(body, want) {
+			t.Errorf("%s from the cache: %v\n%s", id, err, body)
+		}
 	}
 }

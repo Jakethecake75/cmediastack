@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -94,4 +95,21 @@ func hasCueText(b []byte) bool {
 		}
 	}
 	return false
+}
+
+// readOutTracks copies a film's embedded text tracks, as WebVTT, into one
+// Matroska stream written to w, in a single read of the film (ADR-0074).
+func (s *Subtitles) readOutTracks(ctx context.Context, f *os.File, indices []int, w io.Writer) error {
+	args := []string{
+		"-loglevel", "error",
+		"-nostdin",
+		"-i", "/dev/fd/3",
+	}
+	for _, i := range indices {
+		// Indices from the probe, never from a request.
+		args = append(args, "-map", "0:"+strconv.Itoa(i))
+	}
+	args = append(args, "-c:s", "webvtt", "-f", "matroska", "pipe:1")
+	_, err := s.sandbox.Pipe(ctx, w, f, FFmpegPath, args...)
+	return err
 }

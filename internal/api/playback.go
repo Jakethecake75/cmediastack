@@ -514,6 +514,11 @@ func (h *Handlers) ServeSubtitle(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, playback.ErrToolMissing):
 		writeProblem(w, http.StatusServiceUnavailable, err.Error())
+	case errors.Is(err, playback.ErrSubtitlesPreparing):
+		// 503 with Retry-After: the same request works once the film's
+		// tracks are read out (ADR-0074).
+		w.Header().Set("Retry-After", "15")
+		writeProblem(w, http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, playback.ErrEmptySubtitle):
 		// 422, not 404 and not 500: the track is real and the request named it
 		// correctly, and what failed is the CONTENT. The message says what is

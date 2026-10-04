@@ -252,3 +252,34 @@ func TestAConvertedStreamIsProducedAheadOfTheReader(t *testing.T) {
 	}
 	waitFor(t, "the rest was not drained after the writer failed", func() bool { return src.n.Load() == 4<<20 })
 }
+
+// A copy that starts part-way starts its sound at the picture's keyframe, not
+// at the asked-for second, so the two stay together (ADR-0074); a transcode
+// cuts both at the second.
+func TestACopyStartsItsSoundWithItsPicture(t *testing.T) {
+	copyPlan := PlanConvert(hdrFilm(), ChromeLikeHEVC, AudioAAC)
+	args := convertArgs(copyPlan, "aac", StreamOptions{Start: 374 * time.Second, HEVC: true})
+	if i, j := slices.Index(args, "-noaccurate_seek"), slices.Index(args, "-i"); i < 0 || j < i {
+		t.Errorf("a copy from 6:14 does not start its sound at the keyframe: %v", args)
+	}
+	if slices.Contains(convertArgs(copyPlan, "aac", StreamOptions{HEVC: true}), "-noaccurate_seek") {
+		t.Error("a copy from the start was given a seek flag")
+	}
+	transcode := PlanConvert(hdrFilm(), ChromeLike, AudioAAC)
+	if slices.Contains(convertArgs(transcode, "aac", StreamOptions{Start: 374 * time.Second}), "-noaccurate_seek") {
+		t.Error("a transcode, which cuts exactly, was told not to")
+	}
+}
+
+// Where a copy really starts is read from ffprobe's first packet after the
+// seek: a keyframe, and never later than the asked-for second.
+func TestTheKeyframeACopyStartsAtIsRead(t *testing.T) {
+	if k, ok := parseKeyframe("10.417000,K_\n", 15*time.Second); !ok || k != 10417*time.Millisecond {
+		t.Errorf("got %v, %v; want 10.417s", k, ok)
+	}
+	for _, out := range []string{"", "10.417000,__", "abc,K_", "-1,K_", "16.000000,K_"} {
+		if _, ok := parseKeyframe(out, 15*time.Second); ok {
+			t.Errorf("%q was accepted", out)
+		}
+	}
+}

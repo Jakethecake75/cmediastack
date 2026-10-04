@@ -390,8 +390,18 @@ func (s *Service) ListSubtitles(ctx context.Context, fileID int64) ([]SubtitleTr
 		}
 		return nil, err
 	}
-	return s.subtitles.List(ctx, fileID, probe)
+	tracks, err := s.subtitles.List(ctx, fileID, probe)
+	if err == nil {
+		// The player is opening this file: its embedded tracks start being
+		// read out now, so they are ready by the time one is chosen (ADR-0074).
+		s.subtitles.prepare(ctx, fileID, probe, tracks)
+	}
+	return tracks, err
 }
+
+// CacheSubtitlesIn keeps each file's embedded text tracks in dir, read out
+// once (ADR-0074). Unset, every track is converted from the film each time.
+func (s *Service) CacheSubtitlesIn(dir string) { s.subtitles.cacheDir = dir }
 
 // ServeSubtitle converts one track to WebVTT and writes it.
 func (s *Service) ServeSubtitle(w http.ResponseWriter, r *http.Request,
