@@ -324,18 +324,18 @@ func (s *Service) PlanConversion(ctx context.Context, fileID int64,
 	if err != nil {
 		return RemuxPlan{}, Probe{}, err
 	}
-	return PlanRemux(probe, ChromeLike, target), probe, nil
+	return PlanConvert(probe, ChromeLike, target), probe, nil
 }
 
 // Convert streams a converted version of a file.
 func (s *Service) Convert(w http.ResponseWriter, r *http.Request, fileID int64,
-	target AudioTarget) error {
+	target AudioTarget, opts StreamOptions) error {
 
 	plan, _, err := s.PlanConversion(r.Context(), fileID, target)
 	if err != nil {
 		return err
 	}
-	return s.remuxer.Stream(w, r, fileID, plan, target)
+	return s.remuxer.Stream(w, r, fileID, plan, target, opts)
 }
 
 // Conversions reports how many are running and how many are allowed.

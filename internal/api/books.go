@@ -110,9 +110,13 @@ func (h *Handlers) addBook(w http.ResponseWriter, r *http.Request, in addMediaRe
 		return
 	}
 	w.Header().Set("Location", "/api/v1/media/"+strconv.FormatInt(item.ID, 10))
+	note := searchingNote(h.startSearch("books"), "book")
+	if note == "" {
+		note = "It is on the Wanted list until a file holds it. Nothing was downloaded, and " +
+			"nothing was created on disk."
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"item": itemJSON(item), "name": bookName(item),
-		"note": "It is on the Wanted list until a file holds it. Nothing was downloaded, and " +
-			"nothing was created on disk.",
+		"note": note,
 	})
 }

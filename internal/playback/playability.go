@@ -149,14 +149,12 @@ func Decide(p Probe, c Client) Plan {
 		}
 
 		if v.HDR && !c.HDR {
-			// The one blocker this server cannot fix for you. Tone mapping is
-			// not available on the target hardware at any price (ADR-0005), so
-			// the sentence says so rather than implying a setting exists.
+			// A transcode maps it to SDR (ADR-0071); the offer to do that is
+			// made beside the blockers.
 			plan.Blockers = append(plan.Blockers, Blocker{
 				Code: BlockHDR, What: hdrName(v.ColorTransfer),
 				Says: fmt.Sprintf("this file is %s HDR and your browser cannot "+
-					"display it; this server cannot convert HDR to SDR",
-					hdrName(v.ColorTransfer)),
+					"display it as it is", hdrName(v.ColorTransfer)),
 			})
 		}
 	}

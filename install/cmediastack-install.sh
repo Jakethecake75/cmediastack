@@ -106,6 +106,9 @@ egress:
 download:
   enabled: true
   data_dir: "$MEDIA/downloads"
+acquisition:
+  # Adding a title searches for it and grabs the best release (ADR-0071).
+  automatic: true
 EOF
   chown root:cmediastack "$ETC/config.yaml"
   chmod 0640 "$ETC/config.yaml"
@@ -126,6 +129,16 @@ ensure_address() {
     return 0
   fi
   return 1
+}
+
+# ensure_acquisition: automatic acquisition on where the configuration does not
+# say either way (ADR-0071). An operator who set it, on or off, is left alone.
+ensure_acquisition() {
+  grep -q '^acquisition:' "$ETC/config.yaml" && return 1
+  printf '%s\n' 'acquisition:' \
+    '  # Adding a title searches for it and grabs the best release (ADR-0071).' \
+    '  automatic: true' >>"$ETC/config.yaml"
+  ok "automatic acquisition is on: adding a title now searches for it"
 }
 
 install_service() {
@@ -187,13 +200,17 @@ update() {
   if [ "$before" = "$after" ] && [ -z "${CMS_BINARY:-}" ]; then
     rm -f "$BIN.new"
     ok "already at $before"
-    ensure_address && systemctl restart cmediastack || true
-    return
+    local changed=1
+    ensure_acquisition && changed=0
+    ensure_address && changed=0
+    [ "$changed" -eq 0 ] && systemctl restart cmediastack
+    return 0
   fi
   msg "Updating $before to $after"
   systemctl stop cmediastack
   cp -p "$BIN" "$BIN.old"
   mv "$BIN.new" "$BIN"
+  ensure_acquisition || true
   ensure_address || true
   systemctl start cmediastack
   if wait_ready; then

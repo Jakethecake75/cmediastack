@@ -108,6 +108,14 @@
       <div id="watch-blockers" class="list compact"></div>
       <div class="player" id="watch-player" hidden>
         <video id="watch-video" controls preload="metadata" playsinline></video>
+        <div id="watch-seek" class="seek" hidden>
+          <input id="watch-seek-range" type="range" min="0" step="1" value="0" aria-label="Jump to">
+          <span id="watch-seek-time" class="seek-time"></span>
+          <select id="watch-quality" aria-label="Picture size">
+            <option value="1080">1080p</option>
+            <option value="720">720p</option>
+          </select>
+        </div>
       </div>
       <div id="watch-detail" class="detail" hidden></div>
     </section>
@@ -130,7 +138,10 @@
 
     <section class="view" data-view="queue" hidden>
       <h2>Downloads</h2>
+      <h3>Downloading</h3>
       <div id="queue-list" class="list"></div>
+      <h3>Finished</h3>
+      <div id="queue-done" class="list"></div>
     </section>
 
     <section class="view" data-view="storage" hidden>

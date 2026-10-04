@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -98,8 +99,148 @@ type RemuxPlan struct {
 	// ReencodeAudio is false when the existing audio can simply be copied,
 	// which is the case when only the CONTAINER was the problem.
 	ReencodeAudio bool
-	// VideoIndex is the track to copy.
+	// VideoIndex is the track to copy, or to transcode.
 	VideoIndex int
+
+	// TranscodeVideo re-encodes the pictures to 8-bit H.264 when the browser
+	// cannot decode them (ADR-0071), ToneMap maps HDR to SDR on the way, and
+	// the source's size and transfer function are what the filter is built
+	// from.
+	TranscodeVideo bool
+	ToneMap        bool
+	SourceWidth    int
+	SourceHeight   int
+	Transfer       string
+	// Duration is the file's, so a start past the end begins at the start
+	// rather than producing an empty stream that looks like a failure.
+	Duration time.Duration
+}
+
+// PlanConvert is a remux when that makes the file playable, and otherwise a
+// transcode of the video (ADR-0071): the codec, the bit depth or HDR being the
+// problem is no longer a refusal.
+func PlanConvert(p Probe, c Client, target AudioTarget) RemuxPlan {
+	plan := PlanRemux(p, c, target)
+	plan.Duration = p.Duration
+	if plan.Possible || len(p.Video) == 0 {
+		return plan
+	}
+	v := p.Video[0]
+	t := RemuxPlan{Possible: true, VideoIndex: v.Index, AudioIndex: -1, TranscodeVideo: true,
+		ToneMap: v.HDR && !c.HDR, SourceWidth: v.Width, SourceHeight: v.Height, Transfer: v.ColorTransfer,
+		Duration: p.Duration}
+	if def, ok := DefaultAudio(p.Audio); ok {
+		t.AudioIndex, t.ReencodeAudio = def.Index, true
+	}
+	return t
+}
+
+// StreamOptions is where a conversion starts and how tall a transcode is.
+type StreamOptions struct {
+	// Start seeks the input before decoding: a converted stream is a pipe,
+	// so seeking is starting again from here (ADR-0071).
+	Start time.Duration
+	// Height caps a transcode's picture; zero means DefaultHeight.
+	Height int
+}
+
+// DefaultHeight is a transcode's picture when the viewer does not choose.
+const DefaultHeight = 1080
+
+// ParseHeight accepts a client's choice of transcode height, or refuses: only
+// these become an argument.
+func ParseHeight(s string) (int, bool) {
+	switch s {
+	case "720":
+		return 720, true
+	case "1080":
+		return 1080, true
+	}
+	return 0, false
+}
+
+// toneMapFrom is the transfer functions tone mapping starts from, by the name
+// ffprobe reports; anything else is read as PQ, which is what HDR10 is.
+var toneMapFrom = map[string]bool{"smpte2084": true, "arib-std-b67": true}
+
+// convertArgs is ffmpeg's argument vector for a plan. Every value in it is
+// built here from the probe and the allowlists, never from a request.
+func convertArgs(plan RemuxPlan, encoder string, opts StreamOptions) []string {
+	args := []string{
+		"-loglevel", "error",
+		// ffmpeg reads stdin by default and would consume the parent's.
+		"-nostdin",
+	}
+	if opts.Start > 0 && opts.Start < plan.Duration {
+		args = append(args, "-ss", strconv.FormatInt(int64(opts.Start/time.Second), 10))
+	}
+	args = append(args,
+		// fd 3, handed over by the parent. Never a path (ADR-0020).
+		"-i", "/dev/fd/3",
+		"-map", fmt.Sprintf("0:%d", plan.VideoIndex),
+	)
+	if plan.AudioIndex >= 0 {
+		args = append(args, "-map", fmt.Sprintf("0:%d", plan.AudioIndex))
+	}
+	if plan.TranscodeVideo {
+		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+			"-profile:v", "high", "-pix_fmt", "yuv420p",
+			// A keyframe every two seconds or so: each starts a fragment, so
+			// the first pictures arrive soon after a start or a seek.
+			"-g", "48",
+			"-vf", videoFilter(plan, opts.Height))
+	} else {
+		// The video is COPIED. This is the whole economy of a remux.
+		args = append(args, "-c:v", "copy")
+	}
+	if plan.AudioIndex >= 0 {
+		if plan.ReencodeAudio {
+			args = append(args, "-c:a", encoder, "-b:a", "192k",
+				// Downmixed to stereo. A browser plays stereo; a 7.1 track
+				// re-encoded to 7.1 AAC and then downmixed by the browser
+				// sounds worse and costs more than downmixing once, here.
+				"-ac", "2")
+		} else {
+			args = append(args, "-c:a", "copy")
+		}
+	}
+	return append(args,
+		// The flags that make an MP4 writable to a pipe: no final seek back to
+		// patch the header, and a moov that is valid before the file ends.
+		"-movflags", "frag_keyframe+empty_moov+default_base_moof",
+		"-f", "mp4",
+		"pipe:1",
+	)
+}
+
+// videoFilter scales a transcode to at most the asked height, keeping the
+// aspect with an even width, and tone-maps HDR to SDR BT.709.
+func videoFilter(plan RemuxPlan, height int) string {
+	if height <= 0 {
+		height = DefaultHeight
+	}
+	w, h := 0, 0
+	if plan.SourceHeight > height && plan.SourceWidth > 0 {
+		h = height
+		w = int(float64(plan.SourceWidth)*float64(height)/float64(plan.SourceHeight)/2) * 2
+	}
+	if plan.ToneMap {
+		tin := plan.Transfer
+		if !toneMapFrom[tin] {
+			tin = "smpte2084"
+		}
+		size := ""
+		if h > 0 {
+			size = fmt.Sprintf("w=%d:h=%d:", w, h)
+		}
+		return "zscale=" + size + "tin=" + tin + ":min=bt2020nc:pin=bt2020:rin=tv:t=linear:npl=100," +
+			"format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0," +
+			"zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
+	}
+	if h > 0 {
+		return fmt.Sprintf("scale=%d:%d,format=yuv420p", w, h)
+	}
+	return "format=yuv420p"
 }
 
 // PlanRemux decides whether a remux helps, given what the client can decode.
@@ -224,7 +365,7 @@ func (r *Remuxer) release() {
 // real design and is not this increment. Until then the response says
 // Accept-Ranges: none, so a browser knows before it tries.
 func (r *Remuxer) Stream(w http.ResponseWriter, req *http.Request, fileID int64,
-	plan RemuxPlan, target AudioTarget) error {
+	plan RemuxPlan, target AudioTarget, opts StreamOptions) error {
 
 	if err := authz.RequirePermission(req.Context(), authz.PermBrowse); err != nil {
 		return err
@@ -251,37 +392,7 @@ func (r *Remuxer) Stream(w http.ResponseWriter, req *http.Request, fileID int64,
 	}
 	defer func() { _ = f.Close() }()
 
-	args := []string{
-		"-loglevel", "error",
-		// ffmpeg reads stdin by default and would consume the parent's.
-		"-nostdin",
-		// fd 3, handed over by the parent. Never a path (ADR-0020).
-		"-i", "/dev/fd/3",
-		"-map", fmt.Sprintf("0:%d", plan.VideoIndex),
-	}
-	if plan.AudioIndex >= 0 {
-		args = append(args, "-map", fmt.Sprintf("0:%d", plan.AudioIndex))
-	}
-	// The video is COPIED. This is the whole economy of the thing.
-	args = append(args, "-c:v", "copy")
-	if plan.AudioIndex >= 0 {
-		if plan.ReencodeAudio {
-			args = append(args, "-c:a", encoder, "-b:a", "192k",
-				// Downmixed to stereo. A browser plays stereo; a 7.1 track
-				// re-encoded to 7.1 AAC and then downmixed by the browser
-				// sounds worse and costs more than downmixing once, here.
-				"-ac", "2")
-		} else {
-			args = append(args, "-c:a", "copy")
-		}
-	}
-	args = append(args,
-		// The flags that make an MP4 writable to a pipe: no final seek back to
-		// patch the header, and a moov that is valid before the file ends.
-		"-movflags", "frag_keyframe+empty_moov+default_base_moof",
-		"-f", "mp4",
-		"pipe:1",
-	)
+	args := convertArgs(plan, encoder, opts)
 
 	w.Header().Set("Content-Type", "video/mp4")
 	// Said explicitly. ServeContent is not involved here, and a browser that
@@ -294,6 +405,9 @@ func (r *Remuxer) Stream(w http.ResponseWriter, req *http.Request, fileID int64,
 	r.log.Info("converting a stream",
 		slog.String("file", ref.RelativePath),
 		slog.Bool("audio_reencoded", plan.ReencodeAudio),
+		slog.Bool("video_transcoded", plan.TranscodeVideo),
+		slog.Bool("tone_mapped", plan.ToneMap),
+		slog.Duration("start", opts.Start),
 		slog.String("audio_target", string(target)))
 
 	// The request's context cancels the child, so a viewer who closes the tab

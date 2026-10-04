@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/jakethecake75/cmediastack/internal/importer"
@@ -34,7 +36,7 @@ type PlaybackService interface {
 	// PlanConversion reports whether converting a file would make it playable.
 	PlanConversion(ctx context.Context, fileID int64, target playback.AudioTarget) (playback.RemuxPlan, playback.Probe, error)
 	// Convert streams a converted version of a file.
-	Convert(w http.ResponseWriter, r *http.Request, fileID int64, target playback.AudioTarget) error
+	Convert(w http.ResponseWriter, r *http.Request, fileID int64, target playback.AudioTarget, opts playback.StreamOptions) error
 	// ListSubtitles reports every subtitle track a file has, usable or not.
 	ListSubtitles(ctx context.Context, fileID int64) ([]playback.SubtitleTrack, error)
 	// ServeSubtitle converts one of them to WebVTT and writes it.
@@ -252,6 +254,10 @@ func (h *Handlers) PlaybackInfo(w http.ResponseWriter, r *http.Request) {
 				body["convert_why_not"] = conv.Why
 			} else {
 				body["convert_reencodes_audio"] = conv.ReencodeAudio
+				// A transcode costs a hundred times what a remux does, and
+				// the viewer is told which this is (ADR-0071).
+				body["convert_transcodes_video"] = conv.TranscodeVideo
+				body["convert_tone_maps"] = conv.ToneMap
 			}
 		}
 	}
@@ -288,7 +294,13 @@ func (h *Handlers) ConvertFile(w http.ResponseWriter, r *http.Request) {
 		target = parsed
 	}
 
-	err := h.playback.Convert(w, r, id, target)
+	opts, problem := convertOptions(r.URL.Query())
+	if problem != "" {
+		writeProblem(w, http.StatusBadRequest, problem)
+		return
+	}
+
+	err := h.playback.Convert(w, r, id, target, opts)
 	switch {
 	case err == nil:
 		return
@@ -309,6 +321,27 @@ func (h *Handlers) ConvertFile(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeAuthzAware(w, err)
 	}
+}
+
+// convertOptions reads where a converted stream starts, in whole seconds, and
+// how tall a transcode is (ADR-0071), or says what is wrong with them.
+func convertOptions(q url.Values) (playback.StreamOptions, string) {
+	var opts playback.StreamOptions
+	if raw := q.Get("start"); raw != "" {
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || n < 0 {
+			return opts, "start is a whole number of seconds"
+		}
+		opts.Start = time.Duration(n) * time.Second
+	}
+	if raw := q.Get("height"); raw != "" {
+		h, ok := playback.ParseHeight(raw)
+		if !ok {
+			return opts, "a transcode is 720 or 1080 pixels tall, and nothing else"
+		}
+		opts.Height = h
+	}
+	return opts, ""
 }
 
 type positionRequest struct {

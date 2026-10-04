@@ -164,7 +164,7 @@ func TestStreamingRefusesACodecItWasNotAskedToProduce(t *testing.T) {
 
 	err := r.remuxer.Stream(w, req, 1,
 		RemuxPlan{Possible: true, VideoIndex: 0, AudioIndex: -1},
-		AudioTarget("libfdk_aac -y /etc/shadow"))
+		AudioTarget("libfdk_aac -y /etc/shadow"), StreamOptions{})
 	if err == nil {
 		t.Fatal("an unlisted codec reached the conversion")
 	}
@@ -219,7 +219,7 @@ func TestConversionsAreBounded(t *testing.T) {
 	// And the HTTP path reports it rather than queueing silently.
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil).WithContext(r.ctx)
 	err := r.remuxer.Stream(httptest.NewRecorder(), req, 1,
-		RemuxPlan{Possible: true, VideoIndex: 0, AudioIndex: -1}, AudioAAC)
+		RemuxPlan{Possible: true, VideoIndex: 0, AudioIndex: -1}, AudioAAC, StreamOptions{})
 	if err == nil || !strings.Contains(err.Error(), "already being converted") {
 		t.Fatalf("err = %v, want a refusal naming the limit", err)
 	}
@@ -317,7 +317,7 @@ func TestAConversionCopiesTheVideoAndRebuildsTheAudio(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	plan := RemuxPlan{Possible: true, VideoIndex: 0, AudioIndex: 1, ReencodeAudio: true}
-	if err := rx.Stream(w, req, 1, plan, AudioOpus); err != nil {
+	if err := rx.Stream(w, req, 1, plan, AudioOpus, StreamOptions{}); err != nil {
 		t.Fatalf("converting: %v", err)
 	}
 

@@ -17,8 +17,8 @@ BRANCH="${CMS_BRANCH:-main}"
 RAW="https://raw.githubusercontent.com/$REPO/$BRANCH"
 
 # Defaults. Media lives inside the container, so the disk is sized for it.
-var_cpu=2
-var_ram=2048
+var_cpu=4
+var_ram=4096
 var_disk=64
 var_hostname=cmediastack
 var_bridge=vmbr0

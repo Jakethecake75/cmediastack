@@ -58,6 +58,7 @@ type Handlers struct {
 	refresher      EpisodeRefresher
 	altTitles      AlternativeTitleSource
 	filmTitles     FilmTitleSource
+	searchSoon     func(string) bool
 	adder          LibraryAdder
 	artwork        ArtworkReader
 	backups        BackupService
@@ -127,6 +128,10 @@ type Deps struct {
 	// (ADR-0026). Nil means only the film's own title is recognised, and the
 	// search says so.
 	FilmTitles FilmTitleSource
+	// SearchSoon starts automatic acquisition's pass for what was just added
+	// — "search", "albums" or "books" — and reports whether it did (ADR-0071).
+	// Nil, as when automatic acquisition is off, starts nothing.
+	SearchSoon func(task string) bool
 	// Adder puts a title in the library before any of it is on disk
 	// (ADR-0025, ADR-0026). Nil means nothing can be added, and the route
 	// answers 501.
@@ -209,6 +214,7 @@ func New(d Deps) *Handlers {
 		refresher:     d.Refresher,
 		altTitles:     d.AlternativeTitles,
 		filmTitles:    d.FilmTitles,
+		searchSoon:    d.SearchSoon,
 		adder:         d.Adder,
 		backups:       d.Backups,
 		acquisition:   d.Acquisition,
@@ -845,4 +851,20 @@ func issueCSRFCookie(w http.ResponseWriter, secure bool) {
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// startSearch starts automatic acquisition's pass for what was just added, and
+// reports whether it did (ADR-0071).
+func (h *Handlers) startSearch(task string) bool {
+	return h.searchSoon != nil && h.searchSoon(task)
+}
+
+// searchingNote is what an added title's answer says about getting it.
+func searchingNote(searching bool, what string) string {
+	if searching {
+		return "Searching the indexers for it now: the best release the default quality profile " +
+			"accepts is grabbed, and Downloads shows it. Nothing was created on disk yet; the " +
+			"folder appears when the " + what + " is imported."
+	}
+	return ""
 }

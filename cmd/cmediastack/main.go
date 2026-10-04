@@ -814,6 +814,7 @@ func runApp(cfg config.Config, logger *slog.Logger, logRing *logging.Ring) error
 	// Neither runs at start: a process restarting in a loop must not become a
 	// loop of indexer requests.
 	var acquisition api.AcquisitionService
+	var searchSoon func(string) bool
 	if cfg.Acquisition.Automatic && downloads != nil {
 		acquirer, err := acquire.New(acquire.Deps{
 			Store:    acquire.NewStore(database, time.Now),
@@ -891,6 +892,17 @@ func runApp(cfg config.Config, logger *slog.Logger, logRing *logging.Ring) error
 				return acquirer.RunBooks(authz.SystemPrincipal(ctx, authz.TaskAcquire))
 			},
 		})
+		// Adding a title starts the pass for its kind at once (ADR-0071), in
+		// the background: the answer to the add does not wait on indexers.
+		searchSoon = func(task string) bool {
+			name, ok := map[string]string{"search": "acquire.search", "albums": "acquire.albums",
+				"books": "acquire.books"}[task]
+			if !ok {
+				return false
+			}
+			go func() { _, _ = scheduler.Trigger(ctx, name) }()
+			return true
+		}
 		logger.Info("automatic acquisition is on",
 			slog.String("recent_releases_every", cfg.Acquisition.RSSInterval.String()),
 			slog.String("search_every", cfg.Acquisition.SearchInterval.String()),
@@ -1166,6 +1178,7 @@ func runApp(cfg config.Config, logger *slog.Logger, logRing *logging.Ring) error
 		// What automatic acquisition last did about each wanted item, for the
 		// Wanted screen (ADR-0030). Nil when it is off.
 		Acquisition: acquisition,
+		SearchSoon:  searchSoon,
 		// The Discord webhook and what is sent to it (ADR-0032).
 		Notifications:  notifier,
 		TrashRetention: cfg.Media.TrashRetention,

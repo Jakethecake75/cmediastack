@@ -12,7 +12,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/Jakethecake75/cmediastac
 ```
 
 It asks for default or advanced settings, creates an unprivileged Debian 12
-container (2 cores, 2 GB, 64 GB — your media lives in it), installs the latest
+container (4 cores, 4 GB, 64 GB — your media lives in it), installs the latest
 release, and prints the address to open: `https://<container-ip>:8443/setup`.
 Open it straight away — whoever does becomes the administrator — and sign in;
 **Settings → Getting started** then asks for TMDB, OpenSubtitles, a SOCKS5 proxy, the

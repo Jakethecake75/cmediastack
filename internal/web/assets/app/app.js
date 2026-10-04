@@ -3292,7 +3292,7 @@
    * a conversion: a remuxed stream carries video and one audio track and no
    * subtitles at all, and these still work because they are fetched
    * separately. */
-  function attachSubtitles(video, fileId, list) {
+  function attachSubtitles(video, fileId, list, offset) {
     clearTracks(video);
     var forcedUsed = false;
     (list || []).forEach(function (t) {
@@ -3314,6 +3314,17 @@
       track.addEventListener('error', function () {
         subtitleComplaint(track.label);
       });
+      /* A converted stream that started part-way through counts from zero,
+       * so its subtitles are moved back by where it started (ADR-0071). */
+      if (offset > 0) {
+        track.addEventListener('load', function () {
+          var cues = track.track.cues || [];
+          for (var i = 0; i < cues.length; i++) {
+            cues[i].startTime -= offset;
+            cues[i].endTime -= offset;
+          }
+        });
+      }
       video.appendChild(track);
     });
     return video.querySelectorAll('track').length;
@@ -3367,6 +3378,8 @@
     var detail = $('watch-detail');
 
     $('watch-title').textContent = watchState.title || 'Watch';
+    conv = null;
+    $('watch-seek').hidden = true;
     clear(blockers);
     clear(detail);
     detail.hidden = true;
@@ -3425,17 +3438,21 @@
            * the button simply being absent. */
           if (info.can_convert) {
             var row = el('div', 'item');
-            row.appendChild(el('div', 'title', 'This server can convert it'));
-            row.appendChild(el('div', 'meta', info.convert_reencodes_audio
-              ? 'The picture is copied unchanged and only the soundtrack is ' +
-                'rebuilt, so this costs very little.'
-              : 'Only the container changes. The picture and sound are copied ' +
-                'unchanged.'));
-            actions(row).appendChild(button('Convert and play', 'primary',
+            row.appendChild(el('div', 'title', info.convert_transcodes_video
+              ? 'This server can transcode it' : 'This server can convert it'));
+            row.appendChild(el('div', 'meta', info.convert_transcodes_video
+              ? 'The picture is re-encoded to H.264' + (info.convert_tone_maps ? ', and mapped from HDR to ordinary colour,' : '') +
+                ' as it plays. This takes a lot of the server\u2019s processor; choose 720p if it stutters.'
+              : (info.convert_reencodes_audio
+                ? 'The picture is copied unchanged and only the soundtrack is ' +
+                  'rebuilt, so this costs very little.'
+                : 'Only the container changes. The picture and sound are copied ' +
+                  'unchanged.')));
+            actions(row).appendChild(button(info.convert_transcodes_video ? 'Transcode and play' : 'Convert and play', 'primary',
               function (btn) {
                 btn.disabled = true;
-                btn.textContent = 'Converting…';
-                playConverted(video, player, info.subtitle_tracks);
+                btn.textContent = info.convert_transcodes_video ? 'Transcoding' : 'Converting';
+                playConverted(video, player, info, info.resume_ms > 0 ? info.resume_ms / 1000 : 0);
               }));
             blockers.appendChild(row);
           } else if (info.convert_why_not) {
@@ -3514,19 +3531,46 @@
     return 'aac';
   }
 
-  function playConverted(video, player, subtitles) {
+  /* A converted stream is a pipe, so seeking is starting it again from there
+   * (ADR-0071). conv is where it started, how long the film is and what was
+   * asked for: the scrubber, the clock and a saved place are the film's time,
+   * not the stream's. Null while a file plays directly. */
+  var conv = null;
+
+  function filmTime(video) { return (conv ? conv.start : 0) + (video.currentTime || 0); }
+
+  function playConverted(video, player, info, at) {
+    var height = conv ? conv.height : 1080;
+    conv = { info: info, start: Math.max(0, Math.floor(at || 0)), height: height,
+      duration: (info.duration_ms || 0) / 1000 };
     lastSaved = -1;
-    video.src = '/api/v1/files/' + watchState.fileId +
-      '/convert?audio=' + encodeURIComponent(conversionAudio());
+    var q = '/convert?audio=' + encodeURIComponent(conversionAudio());
+    if (conv.start > 0) { q += '&start=' + conv.start; }
+    if (info.convert_transcodes_video) { q += '&height=' + conv.height; }
+    video.src = '/api/v1/files/' + watchState.fileId + q;
     /* The conversion carries video and one audio track and no subtitles, so
      * these matter MORE here than on a direct play: without them a converted
      * foreign-language film has lost its subtitles entirely. */
-    attachSubtitles(video, watchState.fileId, subtitles);
+    attachSubtitles(video, watchState.fileId, info.subtitle_tracks, conv.start);
     player.hidden = false;
-    /* The converted stream is produced as it is watched, so there is no file
-     * to seek within. Said before somebody drags the scrubber and finds out. */
-    $('watch-summary').textContent =
-      'Converting as it plays. Seeking is not available in a converted stream.';
+    var played = video.play();
+    if (played && played.catch) { played.catch(function () { /* the viewer presses play */ }); }
+
+    var range = $('watch-seek-range');
+    range.max = String(Math.floor(conv.duration));
+    range.value = String(conv.start);
+    $('watch-quality').value = String(conv.height);
+    $('watch-quality').hidden = !info.convert_transcodes_video;
+    showFilmTime(video);
+    $('watch-seek').hidden = !(conv.duration > 0);
+    $('watch-summary').textContent = info.convert_transcodes_video
+      ? 'Transcoding as it plays. Use the bar under the picture to jump.'
+      : 'Converting as it plays. Use the bar under the picture to jump.';
+  }
+
+  function showFilmTime(video) {
+    if (!conv) { return; }
+    $('watch-seek-time').textContent = clock(filmTime(video)) + ' / ' + clock(conv.duration);
   }
 
   /* Whether this browser contradicts the server's refusal. Only the codec
@@ -3563,16 +3607,19 @@
    * refused, silently, exactly when it mattered. keepalive gives the same
    * survives-the-unload behaviour with headers intact. */
   function savePosition(video, opts) {
-    if (!watchState.fileId || !isFinite(video.duration) || video.duration <= 0) {
+    /* A converted stream's own duration is unknown and its time starts where
+     * it did, so the film's are used (ADR-0071). */
+    var total = conv ? conv.duration : video.duration;
+    if (!watchState.fileId || !isFinite(total) || total <= 0) {
       return;
     }
-    var ms = Math.round(video.currentTime * 1000);
+    var ms = Math.round(filmTime(video) * 1000);
     if (!(opts && opts.force) && Math.abs(ms - lastSaved) < 5000) { return; }
     lastSaved = ms;
 
     var body = JSON.stringify({
       position_ms: ms,
-      duration_ms: Math.round(video.duration * 1000)
+      duration_ms: Math.round(total * 1000)
     });
     var path = '/api/v1/files/' + watchState.fileId + '/position';
 
@@ -3604,6 +3651,25 @@
      * stopped: pausing, seeking, and reaching the end. */
     video.addEventListener('timeupdate', function () {
       if (!video.paused) { savePosition(video); }
+      if (conv && document.activeElement !== $('watch-seek-range')) {
+        $('watch-seek-range').value = String(Math.floor(filmTime(video)));
+        showFilmTime(video);
+      }
+    });
+    /* Jumping in a converted stream starts it again from there; so does
+     * choosing another picture size. */
+    $('watch-seek-range').addEventListener('input', function () {
+      if (conv) { $('watch-seek-time').textContent = clock(Number(this.value)) + ' / ' + clock(conv.duration); }
+    });
+    $('watch-seek-range').addEventListener('change', function () {
+      if (!conv) { return; }
+      savePosition(video, { force: true });
+      playConverted(video, $('watch-player'), conv.info, Number(this.value));
+    });
+    $('watch-quality').addEventListener('change', function () {
+      if (!conv) { return; }
+      conv.height = Number(this.value) === 720 ? 720 : 1080;
+      playConverted(video, $('watch-player'), conv.info, filmTime(video));
     });
     video.addEventListener('pause', function () { savePosition(video, { force: true }); });
     video.addEventListener('seeked', function () { savePosition(video, { force: true }); });
@@ -4126,6 +4192,7 @@
       var list = $('queue-list');
       if (res.status === 501) {
         queueShape = '';
+        clear($('queue-done'));
         return empty(list, (res.body && res.body.error) || 'The download engine is not running.');
       }
       if (res.status !== 200 || !res.body) {
@@ -4147,9 +4214,15 @@
       }
       queueShape = shape;
       queueFiguresOf = {};
-      if (!items.length) { return empty(list, 'Nothing is downloading.'); }
-      clear(list);
-      items.forEach(function (t) { list.appendChild(queueRow(t)); });
+      /* Two lists (ADR-0071): what is still transferring, and what is done. */
+      var finished = function (t) { return t.done || t.status === 'complete' || t.status === 'seeding'; };
+      var going = items.filter(function (t) { return !finished(t); });
+      var done = items.filter(finished);
+      if (!going.length) { empty(list, 'Nothing is downloading.'); } else { clear(list); }
+      going.forEach(function (t) { list.appendChild(queueRow(t)); });
+      var doneList = $('queue-done');
+      if (!done.length) { empty(doneList, 'Nothing has finished yet.'); } else { clear(doneList); }
+      done.forEach(function (t) { doneList.appendChild(queueRow(t)); });
     });
   }
 

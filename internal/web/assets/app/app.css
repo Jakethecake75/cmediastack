@@ -705,3 +705,9 @@ footer.source {
 }
 .ask-words { margin: 14px 0 22px; }
 .ask-words summary { cursor: pointer; color: var(--accent); font-weight: 600; margin-bottom: 10px; }
+
+/* A converted stream's own scrubber (ADR-0071). */
+.seek { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.seek input[type="range"] { flex: 1; max-width: none; }
+.seek-time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.seek select { width: auto; }

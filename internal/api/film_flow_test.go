@@ -53,7 +53,11 @@ func (s staticFilmTitles) FilmTitles(context.Context, int64) ([]string, error) {
 
 // filmReady rebuilds the router with the follow service, the search service on
 // the canned feed, and the film's names; and gives the instance a films root.
-func (r *rig) filmReady(t *testing.T) {
+func (r *rig) filmReady(t *testing.T) { r.filmReadyWith(t, nil) }
+
+// filmReadyWith is filmReady with the hook that starts automatic
+// acquisition's search for what was just added (ADR-0071).
+func (r *rig) filmReadyWith(t *testing.T, searchSoon func(string) bool) {
 	t.Helper()
 	ctx := authz.WithPrincipal(t.Context(), &authz.Principal{
 		UserID: 1, Username: "jacob", State: authz.StateActive, MFASatisfied: true,
@@ -107,8 +111,33 @@ func (r *rig) filmReady(t *testing.T) {
 		Tickets: r.tickets, Grabs: searcher, Requests: r.requests, Audit: r.audit,
 		Episodes: episodes, Adder: adder, TrashRetention: 7 * 24 * time.Hour,
 		FilmTitles: staticFilmTitles{"Dune", "Dune", "Dune: Part One"},
+		SearchSoon: searchSoon,
 	}))
 	r.rt = rt
+}
+
+// Adding a film starts automatic acquisition's search at once (ADR-0071), and
+// says so; an add that fails starts nothing.
+func TestAddingAFilmStartsItsSearch(t *testing.T) {
+	r := newRig(t)
+	admin := r.bootstrapAdmin()
+	var started []string
+	r.filmReadyWith(t, func(task string) bool { started = append(started, task); return true })
+
+	res := admin.post("/api/v1/media", map[string]any{"kind": "movie", "tmdb_id": 438631})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("add: %d %s", res.Code, res.Raw)
+	}
+	if len(started) != 1 || started[0] != "search" {
+		t.Errorf("searches started = %v, want [search]", started)
+	}
+	if note, _ := res.Body["note"].(string); !strings.Contains(note, "Searching the indexers") {
+		t.Errorf("note = %q; want it to say the search has started", note)
+	}
+	if again := admin.post("/api/v1/media", map[string]any{"kind": "movie", "tmdb_id": 438631}); again.Code != http.StatusConflict ||
+		len(started) != 1 {
+		t.Errorf("adding it again: %d, searches %v", again.Code, started)
+	}
 }
 
 func TestAddingAFilmThroughTheAPIPutsItOnTheWantedList(t *testing.T) {

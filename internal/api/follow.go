@@ -128,15 +128,26 @@ func (h *Handlers) AddMedia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Location", "/api/v1/media/"+strconv.FormatInt(res.Item.ID, 10))
+	searching := h.startSearch("search")
 	if res.Item.Kind == importer.KindMovie {
+		note := searchingNote(searching, "film")
+		if note == "" {
+			note = "Nothing was downloaded, and nothing was created on disk: the folder " +
+				"appears when the film is imported into it. It is on the Wanted list until " +
+				"then; search for it from there or from its page in the library."
+		}
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"item": itemJSON(res.Item),
 			"root": res.Root.Path,
-			"note": "Nothing was downloaded, and nothing was created on disk: the folder " +
-				"appears when the film is imported into it. It is on the Wanted list until " +
-				"then; search for it from there or from its page in the library.",
+			"note": note,
 		})
 		return
+	}
+	note := searchingNote(searching, "first episode")
+	if note == "" {
+		note = "Nothing was downloaded, and nothing was created on disk: the folder " +
+			"appears when the first episode is imported into it. Missing episodes are " +
+			"searched for one at a time, from the series or the Wanted screen."
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"item":      itemJSON(res.Item),
@@ -146,8 +157,6 @@ func (h *Handlers) AddMedia(w http.ResponseWriter, r *http.Request) {
 		"episodes":  res.Episodes,
 		"monitored": res.Monitored,
 		"wanted":    res.Wanted,
-		"note": "Nothing was downloaded, and nothing was created on disk: the folder " +
-			"appears when the first episode is imported into it. Missing episodes are " +
-			"searched for one at a time, from the series or the Wanted screen.",
+		"note":      note,
 	})
 }

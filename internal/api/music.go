@@ -115,10 +115,14 @@ func (h *Handlers) addArtist(w http.ResponseWriter, r *http.Request, in addMedia
 		return
 	}
 	w.Header().Set("Location", "/api/v1/media/"+strconv.FormatInt(res.Item.ID, 10))
+	note := "Nothing was downloaded, and nothing was created on disk. Each album's track list " +
+		"is fetched from MusicBrainz when it is first opened."
+	if h.startSearch("albums") {
+		note += " Wanted albums whose track list is known are searched for now."
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"item": itemJSON(res.Item), "albums": res.Albums, "wanted": res.Wanted, "monitor": in.Monitor,
-		"note": "Nothing was downloaded, and nothing was created on disk. Each album's track list " +
-			"is fetched from MusicBrainz when it is first opened.",
+		"note": note,
 	})
 }
 

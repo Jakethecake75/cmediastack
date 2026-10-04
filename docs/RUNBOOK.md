@@ -25,7 +25,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/Jakethecake75/cmediastac
 ```
 
 `ct/cmediastack.sh` asks for **default** settings (next free ID, `cmediastack`,
-2 cores, 2048 MB, 64 GB, DHCP on `vmbr0`, the first storage that takes
+4 cores, 4096 MB, 64 GB, DHCP on `vmbr0`, the first storage that takes
 containers) or **advanced** ones, then:
 
 - downloads the newest Debian 12 template with `pveam` if it is missing;
@@ -56,6 +56,15 @@ nowhere. NordVPN's proxy does not relay UDP, so each UDP tracker is asked over
 HTTP at the same address instead (the `notes` of `GET /api/v1/queue` say
 which); DHT and uTP stay off. Each download on Request → Downloads shows its
 peers connected, connecting and waiting, and its speed, as they change.
+
+**Grabbing and playing.** Automatic acquisition is on in this install
+(ADR-0071): adding a title searches the indexers at once and grabs the best
+release the default quality profile accepts. Set `acquisition.automatic: false`
+in `/etc/cmediastack/config.yaml` to stop that; an update leaves your choice
+alone. A file a browser cannot decode (HEVC, 10-bit, HDR) is transcoded as it
+plays, which is heavy: give the container 4 cores or more
+(`pct set <id> --cores 4 --memory 4096` on the Proxmox host) and choose 720p if
+it stutters.
 
 **Its address.** The certificate and base URL name the container's address.
 Give the container a fixed address or a DHCP reservation; if it changes, run the

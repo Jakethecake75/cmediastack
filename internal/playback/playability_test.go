@@ -91,8 +91,9 @@ func TestARefusalNamesEveryCapabilityThatIsMissing(t *testing.T) {
 	}
 }
 
-// ADR-0005's hardest limitation, said plainly rather than implying a setting.
-func TestTheHDRRefusalSaysTheServerCannotFixIt(t *testing.T) {
+// HDR is a blocker for direct play, named by its format. A transcode now maps
+// it to SDR (ADR-0071), so the sentence no longer says the server cannot help.
+func TestTheHDRBlockerNamesTheFormat(t *testing.T) {
 	plan := Decide(movie("matroska,webm",
 		VideoStream{Index: 0, Codec: "h264", Width: 3840, Height: 2160,
 			BitDepth: 8, ColorTransfer: "smpte2084", HDR: true},
@@ -107,8 +108,8 @@ func TestTheHDRRefusalSaysTheServerCannotFixIt(t *testing.T) {
 	if hdr == nil {
 		t.Fatalf("no HDR blocker: %+v", plan.Blockers)
 	}
-	if !strings.Contains(hdr.Says, "cannot convert") {
-		t.Errorf("the HDR message implies the server could help: %q", hdr.Says)
+	if strings.Contains(hdr.Says, "cannot convert") {
+		t.Errorf("the HDR message still says the server cannot help: %q", hdr.Says)
 	}
 	if !strings.Contains(hdr.Says, "HDR10") {
 		t.Errorf("the HDR message does not name the format: %q", hdr.Says)

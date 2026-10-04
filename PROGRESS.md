@@ -53,7 +53,7 @@ Phase 6 stops at 6n (2026-10-03): the owner deferred audiobooks and anime's
 absolute numbering, to be added if they are needed.
 Phase 7 is the Proxmox deployment: 7a sets a SOCKS5 proxy from the web and adds
 Getting started, with the install scripts and v0.1.0; 7b (v0.1.1) fixes what the
-first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, and 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete.
+first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, and 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added.
 **Scope change, 2026-09-26:** the operator is starting a new library rather than
 migrating one. Migrating from Sonarr is dropped; the Radarr importer (4g) stays,
 and does nothing unless a Radarr database is placed in its directory
@@ -66,7 +66,7 @@ and does nothing unless a Radarr database is placed in its directory
 | | |
 |---|---|
 | Go packages | 38 |
-| Tests | 1485, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Tests | 1491, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached (run again at 6l, after 6h made `golang.org/x/net/html` reached code). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
 | Routes registered | 153 (15 anonymous, 51 admin-hidden, 19 session-only). **0 of 153 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
@@ -1810,7 +1810,7 @@ looking at any more.
 | An unstated bit depth means 8 | `playback.TestAnUnstatedBitDepthIsTreatedAsEight` — mutation-verified |
 | Matroska stays claimed, on evidence | `playback.TestTheDefaultCapabilitySetStillClaimsMatroska` |
 | The matroska/webm family is one answer | `playback.TestTheMatroskaAndWebMFamilyIsOneAnswer` |
-| HDR says the server cannot fix it | `playback.TestTheHDRRefusalSaysTheServerCannotFixIt` |
+| HDR is named by its format (a transcode now maps it to SDR, ADR-0071) | `playback.TestTheHDRBlockerNamesTheFormat` |
 | A small file gets a shorter probe leash | `playback.TestASmallFileGetsAShorterProbeLeash` |
 
 **Not done.** Remuxing, transcoding, subtitles. (Resume landed in 4d.)
@@ -5427,6 +5427,46 @@ seconds with a History panel left open; Remove asked again, then the list said
 
 ---
 
+### Increment 7h (v0.4.0) — transcoding, grabbing on add, finished downloads ✅
+
+Asked for after the first downloads would not play: both were HEVC Main10
+(one 4K HDR10 with TrueHD, one with EAC3), which no browser decodes, and the
+server only remuxed. [ADR-0071](docs/adr/0071-transcoding-and-grab-on-add.md)
+was written first; it supersedes ADR-0005's refusal of a video transcode and
+of tone mapping.
+
+| What | How |
+|---|---|
+| **Transcoding** | When the pictures are the problem, Convert transcodes: H.264 High 8-bit (libx264 veryfast, CRF 21), at most 1080p or 720p, HDR (PQ or HLG) tone-mapped to BT.709 with `zscale` and `tonemap`, the default audio as stereo AAC. A remux is still used when it is enough. The admission limit on conversions stands |
+| **Seeking a converted stream** | `/convert` takes `start` (whole seconds) and `height` (720 or 1080); a seek restarts ffmpeg with `-ss` before its input. The player has its own bar and clock in the film's time, saves the film's position, shifts subtitles by the offset, resumes where the viewer stopped, and offers 1080p or 720p |
+| **Grab on add** | The Proxmox install turns automatic acquisition on (new installs, and an update where the configuration does not say), and adding a title runs its kind's search at once, so the best release the default profile accepts is grabbed without waiting for the next pass |
+| **Downloading and Finished** | Downloads is two lists: what is still transferring, and what is complete or seeding |
+| **Room to transcode** | The Proxmox container's default is 4 cores and 4 GB (was 2 and 2) |
+
+#### Verified
+
+| Claim | How it is established |
+|---|---|
+| A file whose pictures a browser cannot decode is transcoded, tone-mapped when HDR and with its audio rebuilt; one whose container or sound is the problem is still remuxed; no video is not playable | `playback.TestConvertingTranscodesOnlyWhenTheVideoIsTheProblem` — mutation-verified |
+| ffmpeg is asked to seek before its input (never past the end), for 8-bit H.264, scaled down only, to an even width, tone-mapped from the file's own transfer function | `playback.TestTranscodeArgumentsScaleToneMapAndSeek` — mutation-verified |
+| Only 720 and 1080 are heights, and `start` is whole non-negative seconds | `playback.TestOnlyAllowlistedHeightsAreAccepted`, `api.TestConvertOptionsAreParsedOrRefused` — mutation-verified |
+| Through the real ffmpeg, a 10-bit HDR HEVC file comes out as 8-bit BT.709 H.264 with AAC, and a start trims what came before | `playback.TestATranscodeTurnsTenBitHDRIntoPlayableVideo` |
+| Adding a film starts the search and says so; a failed add starts nothing | `api.TestAddingAFilmStartsItsSearch` — mutation-verified |
+
+Fifteen mutations, all killed — one rewritten after it broke the build.
+
+**On the running binary**: in headless Chrome, a 60-second 4K HDR10 HEVC file
+with EAC3 audio showed *This server can transcode it*; *Transcode and play*
+loaded a 1920×1080 picture with sensible colours, jumping to 0:40 restarted
+the stream there (`start=40`) with the clock at *0:40 / 1:00*, and 720p
+reloaded it at 1280×720. The whole 60 s arrived in 11 s through the
+Windows-to-WSL relay. Downloads showed one downloading and two finished. On
+the Debian 12 container, an update added `acquisition.automatic: true` once
+(not on a second update) and the service logged *automatic acquisition is on*.
+Screenshots: `Claude outputs/v030-*.png`.
+
+---
+
 ## Decisions locked
 
 | # | Decision | ADR |
@@ -5501,6 +5541,7 @@ seconds with a History panel left open; Remove asked again, then the list said
 | 68 | Behind a proxy that refuses UDP, each UDP tracker is also asked over HTTP; the Queue says how each download is doing | [0068](docs/adr/0068-peers-behind-a-proxy-without-udp.md) |
 | 69 | Three sections — Home for watching, Request to find, add or ask, Settings for the rest | [0069](docs/adr/0069-home-request-settings.md) |
 | 70 | One Search with posters; Downloads live; Remove deletes the download's own files | [0070](docs/adr/0070-one-search-live-downloads-remove-deletes.md) |
+| 71 | Transcode when the pictures are the problem, with HDR tone-mapped and seeking by restart; adding a title searches for it; Downloads split into downloading and finished | [0071](docs/adr/0071-transcoding-and-grab-on-add.md) |
 | 9 | Opaque server-side sessions, not JWTs | See the header comment in `internal/identity/session.go` — immediate revocation is a hard requirement, and a self-contained token cannot do it without the database lookup a JWT exists to avoid |
 
 ### Defaults taken in the absence of an answer — override any of these
