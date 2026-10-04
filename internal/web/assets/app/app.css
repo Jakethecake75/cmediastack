@@ -570,22 +570,229 @@ progress {
  * The player
  * ----------------------------------------------------------------------- */
 
-.player {
-  margin: 0.75rem 0;
+/* Full window, over the app's own bar (ADR-0072). Always dark: it is a
+ * picture, whatever the theme. */
+.pl {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
   background: #000;
-  border-radius: var(--radius);
+  color: #fff;
   overflow: hidden;
+  outline: none;
+  --pl-pad: clamp(16px, 3vw, 56px);
 }
-
-.player video {
+.pl video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+/* Subtitles rise above the controls while they show (Chrome and Safari). */
+.pl video::-webkit-media-text-track-container { transition: transform 0.25s; }
+@media (min-width: 641px) {
+  .pl:not(.idle) video::-webkit-media-text-track-container { transform: translateY(-190px); }
+}
+.pl video.fit-cover { object-fit: cover; }
+.pl video.fit-fill { object-fit: fill; }
+.pl.idle { cursor: none; }
+.pl-top, .pl-bottom { position: absolute; left: 0; right: 0; transition: opacity 0.25s; }
+.pl.idle .pl-top, .pl.idle .pl-bottom { opacity: 0; pointer-events: none; }
+.pl-top {
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px var(--pl-pad) 48px calc(var(--pl-pad) - 12px);
+  background: linear-gradient(rgba(0, 0, 0, 0.6), transparent);
+}
+.pl-bottom {
+  bottom: 0;
+  padding: 72px var(--pl-pad) 20px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+}
+.pl-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  background: none;
+  color: #fff;
+}
+.pl-btn:hover { background: rgba(255, 255, 255, 0.12); }
+.pl-btn svg { width: 28px; height: 28px; fill: currentColor; }
+#pl-play svg { width: 36px; height: 36px; }
+.pl-volume { width: 160px; accent-color: #fff; }
+.pl-head { display: flex; align-items: flex-end; gap: 12px; }
+.pl-name { flex: 1; min-width: 0; }
+.pl-year { color: rgba(255, 255, 255, 0.7); font-size: 15px; }
+.pl-title {
+  margin: 0;
+  font-size: clamp(22px, 2.6vw, 34px);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pl-tools { display: flex; gap: 6px; }
+/* The bar is drawn by the SVG under a transparent range input: its widths
+ * are attributes, because the CSP forbids inline styles. */
+.pl-seek-wrap { position: relative; margin: 10px 0 2px; }
+.pl-bar {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 5px;
+  margin-top: -2.5px;
+  pointer-events: none;
+}
+.pl-bar-track { fill: rgba(255, 255, 255, 0.22); }
+.pl-bar-loaded { fill: rgba(255, 255, 255, 0.5); }
+.pl-bar-played { fill: #fff; }
+.pl-seek {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
   display: block;
   width: 100%;
-  /* Capped so a 4K file does not push the details off the screen on a laptop,
-   * and letterboxed rather than cropped: a player that crops is a player that
-   * hides part of the picture without saying so. */
-  max-height: 70vh;
-  background: #000;
-  object-fit: contain;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.pl-seek::-webkit-slider-runnable-track { height: 5px; background: transparent; }
+.pl-seek::-moz-range-track { height: 5px; background: transparent; }
+.pl-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6.5px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+}
+.pl-seek::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 0; }
+.pl-times {
+  display: flex;
+  justify-content: space-between;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.85);
+  font-variant-numeric: tabular-nums;
+}
+.pl-transport { display: flex; gap: 16px; margin: 8px 0 4px -10px; }
+.pl-tabs button {
+  padding: 6px 0;
+  background: none;
+  color: #fff;
+  font-weight: 600;
+}
+.pl-tabs button[aria-expanded="true"] { text-decoration: underline; text-underline-offset: 6px; }
+
+.pl-menu, .pl-sheet, .pl-stats, .pl-toast, .pl-message {
+  position: absolute;
+  background: rgba(30, 32, 36, 0.94);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.pl-menu {
+  right: var(--pl-pad);
+  bottom: 220px;
+  min-width: 280px;
+  max-height: calc(100% - 260px);
+  overflow-y: auto;
+  padding: 8px;
+}
+.pl-menu-title { padding: 8px 16px; font-weight: 600; text-align: center; color: rgba(255, 255, 255, 0.8); }
+.pl-menu button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: none;
+  color: #fff;
+  text-align: left;
+}
+.pl-menu button:hover, .pl-menu button:focus-visible { background: rgba(255, 255, 255, 0.12); outline: none; }
+.pl-menu .tick { width: 20px; flex: none; }
+.pl-menu .value { margin-left: auto; padding-left: 24px; color: rgba(255, 255, 255, 0.6); font-size: 14px; }
+.pl-sheet {
+  left: var(--pl-pad);
+  right: var(--pl-pad);
+  bottom: 280px;
+  max-height: calc(100% - 360px);
+  overflow-y: auto;
+  padding: 16px 20px;
+  color: #e6edf3;
+}
+.pl-sheet .item { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.12); }
+.pl-sheet .muted, .pl-sheet .meta { color: rgba(255, 255, 255, 0.65); }
+.pl-sheet h3:first-child { margin-top: 0; }
+.pl-sheet .detail { margin: 0; padding: 0; border: 0; }
+#pl-caveats { margin-bottom: 16px; }
+#pl-caveats:empty { display: none; }
+.pl-stats {
+  top: 80px;
+  left: var(--pl-pad);
+  margin: 0;
+  padding: 12px 16px;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 16px;
+  font: 12px/1.5 var(--mono);
+}
+.pl-stats dt { color: rgba(255, 255, 255, 0.6); }
+.pl-stats dd { margin: 0; }
+.pl-toast {
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(560px, calc(100% - 32px));
+  padding: 10px 16px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pl-toast button { background: rgba(255, 255, 255, 0.16); color: #fff; padding: 4px 12px; white-space: nowrap; }
+.pl-message {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(560px, calc(100% - 32px));
+  max-height: 60%;
+  overflow-y: auto;
+  padding: 20px;
+  text-align: center;
+}
+.pl-message p { margin: 0; }
+.pl-message .list { margin-top: 12px; text-align: left; }
+.pl-message .item { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.12); color: #fff; }
+.pl-message .meta { color: rgba(255, 255, 255, 0.65); }
+.pl-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
+  border: 4px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: pl-spin 0.9s linear infinite;
+}
+@keyframes pl-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pl-spinner { animation-duration: 3s; } }
+@media (max-width: 640px) {
+  .pl-volume { display: none; }
+  .pl-menu, .pl-sheet { left: 16px; right: 16px; min-width: 0; top: 72px; bottom: auto; max-height: calc(100% - 400px); }
+  .pl:not(.idle) video::-webkit-media-text-track-container { transform: translateY(-260px); }
 }
 
 /* Under the Search form: which profile judges searches, and — for an
@@ -705,9 +912,3 @@ footer.source {
 }
 .ask-words { margin: 14px 0 22px; }
 .ask-words summary { cursor: pointer; color: var(--accent); font-weight: 600; margin-bottom: 10px; }
-
-/* A converted stream's own scrubber (ADR-0071). */
-.seek { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
-.seek input[type="range"] { flex: 1; max-width: none; }
-.seek-time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; white-space: nowrap; }
-.seek select { width: auto; }

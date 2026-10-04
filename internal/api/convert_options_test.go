@@ -15,6 +15,9 @@ func TestConvertOptionsAreParsedOrRefused(t *testing.T) {
 	if problem != "" || got != (playback.StreamOptions{Start: 4271 * time.Second, Height: 720}) {
 		t.Errorf("got %+v, %q", got, problem)
 	}
+	if got, _ := convertOptions(url.Values{"hevc": {"1"}}); !got.HEVC {
+		t.Errorf("hevc=1 was not read (ADR-0072)")
+	}
 	if got, problem := convertOptions(url.Values{}); problem != "" || got != (playback.StreamOptions{}) {
 		t.Errorf("nothing asked: %+v, %q", got, problem)
 	}

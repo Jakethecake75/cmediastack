@@ -341,6 +341,40 @@ func firstLine(b []byte) string {
 	return string(bytes.TrimSpace(b))
 }
 
+// copyAhead copies src to dst through up to max bytes that a second goroutine
+// reads ahead of dst. After dst fails, the rest of src is drained, so the
+// reader never blocks; the caller stops whatever is writing src.
+func copyAhead(dst io.Writer, src io.Reader, max int) (int64, error) {
+	const chunk = 64 << 10
+	ch := make(chan []byte, max/chunk)
+	go func() {
+		defer close(ch)
+		for {
+			b := make([]byte, chunk)
+			k, err := src.Read(b)
+			if k > 0 {
+				ch <- b[:k]
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	var n int64
+	for b := range ch {
+		k, err := dst.Write(b)
+		n += int64(k)
+		if err != nil {
+			go func() {
+				for range ch {
+				}
+			}()
+			return n, err
+		}
+	}
+	return n, nil
+}
+
 // RemuxTimeout bounds a single conversion.
 //
 // Long, because it covers a whole film being watched: the process lives for as
@@ -349,11 +383,18 @@ func firstLine(b []byte) string {
 // that vanished without the connection closing.
 const RemuxTimeout = 6 * time.Hour
 
+// ConvertAhead is how much of a converted stream may wait in memory for the
+// browser (ADR-0072). A browser reads a piped stream only a few seconds ahead
+// of the picture, so without this ffmpeg idles until asked and any dip in a
+// transcode's speed is a stall; with it, ffmpeg keeps working into this much
+// lead. At most this per conversion, and conversions are admission-limited.
+const ConvertAhead = 64 << 20
+
 // Pipe runs a tool in the jail and copies its stdout to w as it is produced.
 //
 // Separate from Run because the two have opposite shapes: Run collects a small
-// answer into memory, and this one produces gigabytes that must never be held.
-// A single method with a flag would have one of those behaviours by accident.
+// answer into memory, and this one produces gigabytes that must never be held
+// whole: at most ConvertAhead of it waits for the reader.
 func (s *Sandbox) Pipe(ctx context.Context, w io.Writer, file *os.File,
 	tool string, args ...string) (int64, error) {
 
@@ -393,11 +434,17 @@ func (s *Sandbox) Pipe(ctx context.Context, w io.Writer, file *os.File,
 		return 0, fmt.Errorf("playback: starting %s: %w", tool, err)
 	}
 
-	n, copyErr := io.Copy(w, out)
+	n, copyErr := copyAhead(w, out, ConvertAhead)
+	viewerGone := ctx.Err() == context.Canceled
+	if copyErr != nil {
+		// Nothing is reading any more: stop the tool rather than let it
+		// finish the film into the drain.
+		cancel()
+	}
 	waitErr := cmd.Wait()
 
 	switch {
-	case ctx.Err() == context.Canceled:
+	case viewerGone:
 		// The viewer went away. Not a failure.
 		return n, nil
 	case copyErr != nil:

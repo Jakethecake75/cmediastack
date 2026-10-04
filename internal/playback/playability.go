@@ -315,3 +315,15 @@ var ChromeLike = Client{
 	AudioCodecs: []string{"aac", "mp3", "opus", "vorbis", "flac"},
 	MaxBitDepth: 8,
 }
+
+// ChromeLikeHEVC is ChromeLike for a browser that says it decodes HEVC Main10
+// and shows HDR (ADR-0072): Chrome or Edge with a GPU that decodes HEVC, and
+// Safari. It decides conversions only, so such a file is copied rather than
+// transcoded; direct play is still decided with ChromeLike.
+var ChromeLikeHEVC = Client{
+	Containers:  ChromeLike.Containers,
+	VideoCodecs: append([]string{"hevc"}, ChromeLike.VideoCodecs...),
+	AudioCodecs: ChromeLike.AudioCodecs,
+	MaxBitDepth: 10,
+	HDR:         true,
+}

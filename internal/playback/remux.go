@@ -99,8 +99,10 @@ type RemuxPlan struct {
 	// ReencodeAudio is false when the existing audio can simply be copied,
 	// which is the case when only the CONTAINER was the problem.
 	ReencodeAudio bool
-	// VideoIndex is the track to copy, or to transcode.
+	// VideoIndex is the track to copy, or to transcode, and VideoCodec what
+	// it is.
 	VideoIndex int
+	VideoCodec string
 
 	// TranscodeVideo re-encodes the pictures to 8-bit H.264 when the browser
 	// cannot decode them (ADR-0071), ToneMap maps HDR to SDR on the way, and
@@ -142,6 +144,9 @@ type StreamOptions struct {
 	Start time.Duration
 	// Height caps a transcode's picture; zero means DefaultHeight.
 	Height int
+	// HEVC is the browser saying it decodes HEVC Main10 and shows HDR, so
+	// such a file is copied rather than transcoded (ADR-0072).
+	HEVC bool
 }
 
 // DefaultHeight is a transcode's picture when the viewer does not choose.
@@ -183,7 +188,9 @@ func convertArgs(plan RemuxPlan, encoder string, opts StreamOptions) []string {
 		args = append(args, "-map", fmt.Sprintf("0:%d", plan.AudioIndex))
 	}
 	if plan.TranscodeVideo {
-		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+		// superfast rather than veryfast: about 15% quicker for a larger
+		// stream, because a transcode that falls behind stalls (ADR-0072).
+		args = append(args, "-c:v", "libx264", "-preset", "superfast", "-crf", "21",
 			"-profile:v", "high", "-pix_fmt", "yuv420p",
 			// A keyframe every two seconds or so: each starts a fragment, so
 			// the first pictures arrive soon after a start or a seek.
@@ -192,6 +199,10 @@ func convertArgs(plan RemuxPlan, encoder string, opts StreamOptions) []string {
 	} else {
 		// The video is COPIED. This is the whole economy of a remux.
 		args = append(args, "-c:v", "copy")
+		if plan.VideoCodec == "hevc" {
+			// The tag Safari requires; ffmpeg's default, hev1, it refuses.
+			args = append(args, "-tag:v", "hvc1")
+		}
 	}
 	if plan.AudioIndex >= 0 {
 		if plan.ReencodeAudio {
@@ -277,7 +288,7 @@ func PlanRemux(p Probe, c Client, target AudioTarget) RemuxPlan {
 			v.BitDepth)}
 	}
 
-	plan := RemuxPlan{Possible: true, VideoIndex: v.Index, AudioIndex: -1}
+	plan := RemuxPlan{Possible: true, VideoIndex: v.Index, VideoCodec: v.Codec, AudioIndex: -1}
 
 	if def, ok := DefaultAudio(p.Audio); ok {
 		plan.AudioIndex = def.Index

@@ -3,7 +3,7 @@
 Hand this file to a new session to resume. It is the authoritative statement of
 what exists.
 
-**Last updated:** 2026-09-30
+**Last updated:** 2026-10-04
 **Current phase:** 5 (Music and books) — Phase 4's increments 4a–4z and 4aa–4ai complete, and 5a–5g: Phase 5 is complete. Phase 6 works through the known gaps: 6a–6n. Eight of them are
 library and acquisition work done while Phase 4 was open: 4g (migrating from
 Radarr), 4k (episode tracking), 4l (searching for a wanted episode), 4m
@@ -53,7 +53,7 @@ Phase 6 stops at 6n (2026-10-03): the owner deferred audiobooks and anime's
 absolute numbering, to be added if they are needed.
 Phase 7 is the Proxmox deployment: 7a sets a SOCKS5 proxy from the web and adds
 Getting started, with the install scripts and v0.1.0; 7b (v0.1.1) fixes what the
-first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, and 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added.
+first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added, and 7i (v0.4.1) plays in a full-window player that keeps up.
 **Scope change, 2026-09-26:** the operator is starting a new library rather than
 migrating one. Migrating from Sonarr is dropped; the Radarr importer (4g) stays,
 and does nothing unless a Radarr database is placed in its directory
@@ -66,13 +66,13 @@ and does nothing unless a Radarr database is placed in its directory
 | | |
 |---|---|
 | Go packages | 38 |
-| Tests | 1491, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Tests | 1493, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached (run again at 6l, after 6h made `golang.org/x/net/html` reached code). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
 | Routes registered | 153 (15 anonymous, 51 admin-hidden, 19 session-only). **0 of 153 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
 | **Can you log in?** | **Yes, in a browser.** First run → wizard → login → authenticator enrollment → working session |
 | **Is there a UI?** | **Yes.** No build step, no third-party frontend code |
-| **Can you watch something?** | **Yes.** Direct play with seeking and resume, a remux for files a browser cannot decode, and subtitles. Verified in real Chromium **and inside the built container** |
+| **Can you watch something?** | **Yes, in a full-window player** (ADR-0072). Direct play with seeking and resume; for a file a browser cannot decode, its original picture copied where the browser decodes HEVC, otherwise a remux or a transcode; and subtitles. Verified in real Chromium **and inside the built container** |
 | **Does it know what a series is missing?** | **Yes.** Episode lists come from the metadata provider and from nowhere else; *wanted* is monitored, aired and absent; a renewed series is noticed. Verified against the live API |
 | **Can you start a library from nothing?** | **Yes, series and films.** Search the provider and add: a series with every season and episode and your choice of which you want, a film straight onto the Wanted list — nothing downloaded, nothing written to disk. Verified against the live API through the binary and in a browser |
 | **Can it fetch what is missing by itself?** | **Yes, when you turn it on** (`acquisition.automatic`, off by default). Every 15 minutes each indexer is asked once for its recent releases and three wanted items are searched for; a release is grabbed only when it is exactly one wanted item, the default profile accepts it, it has seeders and it was never in the queue — five a pass at most, nothing while the tunnel is down, every grab audited as `system:acquire`. The Wanted screen says beside every item what was done and why not. Verified on the running binary: grabbed from the feed, finished, imported, gone from the list |
@@ -5467,6 +5467,56 @@ Screenshots: `Claude outputs/v030-*.png`.
 
 ---
 
+### Increment 7i (v0.4.1) — a full-window player, and playback that keeps up ✅
+
+Asked for after 7h: the HEVC films played, but slowly, buffering every few
+seconds, and the operator wanted a player like Plex's.
+[ADR-0072](docs/adr/0072-a-full-screen-player-and-cheaper-playback.md) was
+written first.
+
+**What was measured.** On Debian 12's ffmpeg, a 4K HDR10 HEVC file at 40 Mb/s
+(cores of a much faster CPU than the target's): ADR-0071's transcode ran at
+1.25x real time on 4 cores and **0.74x on 2**, the container's default before
+7h. Decoding alone was 2.90x and 1.83x. Separately, in Chrome, a piped stream
+is read only about 2.5 s ahead of the picture, so ffmpeg sat idle once that was
+in hand and any dip in its speed became a stall.
+
+| What | How |
+|---|---|
+| **The original picture for HEVC browsers** | The player asks `mediaCapabilities.decodingInfo` about 4K 10-bit PQ HEVC; when the browser says yes, `/playback` and `/convert` get `hevc=1`, and a file that would be transcoded is instead copied (tagged `hvc1`) with only the sound rebuilt. `/playback` says so with `convert_copies_hevc`. Direct play is still decided without it. If the browser then fails to decode it, the player transcodes instead, once |
+| **A cheaper transcode** | libx264 `superfast` (was `veryfast`): about 15% faster |
+| **The server works ahead** | ffmpeg's output is read ahead of the browser into up to 64 MiB per conversion (`playback.ConvertAhead`), so a transcode builds a lead instead of waiting to be asked; a viewer who leaves stops ffmpeg and the rest is drained |
+| **Stalls** | A stall pauses until 10 s have arrived or nothing more arrives for 3 s. Two stalls within 90 s of a 1080p transcode the viewer did not choose drop it to 720p, with a notice |
+| **The player** | Full window, controls that hide after 3 s of playback: back, volume and mute, picture-in-picture and full screen at the top; year and title, subtitles, speed and settings menus, the bar with buffered and played, elapsed, remaining and the clock time it ends, back and forward 10 s, play/pause and Info at the bottom. Settings has Quality (Original, 1080p, 720p, as the file allows), Aspect Ratio (fit, fill, stretch) and Stats for Nerds. Info is what is in the file. Keys: space or k, arrows, m, f, Esc. A jump within what has arrived is a seek; past it, the stream restarts there. Play starts on its own (direct, else the copy, else the transcode); leaving stops the stream and keeps the place |
+
+Left out: Chapters and Cast & Crew (no data for them), casting (a cast device
+cannot carry the session cookie), hardware encoding (VAAPI, later).
+
+#### Verified
+
+| Claim | How it is established |
+|---|---|
+| A browser that decodes HEVC gets a 4K HDR HEVC film's picture copied and tagged `hvc1`, with the sound rebuilt; any other gets the transcode; ChromeLike itself is unchanged | `playback.TestABrowserThatDecodesHEVCGetsTheOriginalPicture` — mutation-verified |
+| `hevc=1` is read on `/convert` | `api.TestConvertOptionsAreParsedOrRefused` — mutation-verified |
+| A converted stream is produced ahead of a reader that is not reading yet, every byte is counted, and a failed reader leaves the rest drained rather than the producer stuck | `playback.TestAConvertedStreamIsProducedAheadOfTheReader` — mutation-verified |
+
+Ten mutations, all killed (one rewritten after it broke the build).
+
+**On the running binary**, in Chrome on Windows driven over CDP: the 3-minute
+4K HDR10 HEVC film with EAC3 played as *Original picture copied, sound
+converted* at 3840x2160 with no frames dropped; a jump to 2:00 restarted the
+stream there; choosing 1080p transcoded it (*Transcoding to 1080p, HDR mapped
+to SDR*, 1920x1080). With the server pinned to one core, the 1080p transcode
+stalled, waited for a buffer and resumed, then on the second stall dropped
+itself to 720p with its notice. A 1080p H.264 MP4 played directly; its SRT
+subtitle was chosen from the player's menu and drawn above the controls; the
+arrow key jumped 10 s, space paused and resumed (also after a menu), m muted,
+1.5x applied, and the controls hid after 3 s. Back returned to the library and
+no ffmpeg was left running. At phone width the menus open below the top bar.
+Screenshots: `Claude outputs/7i-*.png`.
+
+---
+
 ## Decisions locked
 
 | # | Decision | ADR |
@@ -5542,6 +5592,7 @@ Screenshots: `Claude outputs/v030-*.png`.
 | 69 | Three sections — Home for watching, Request to find, add or ask, Settings for the rest | [0069](docs/adr/0069-home-request-settings.md) |
 | 70 | One Search with posters; Downloads live; Remove deletes the download's own files | [0070](docs/adr/0070-one-search-live-downloads-remove-deletes.md) |
 | 71 | Transcode when the pictures are the problem, with HDR tone-mapped and seeking by restart; adding a title searches for it; Downloads split into downloading and finished | [0071](docs/adr/0071-transcoding-and-grab-on-add.md) |
+| 72 | A full-window player; the original picture copied for a browser that decodes HEVC; a cheaper transcode that the server works ahead on; stalls wait for a buffer and drop to 720p | [0072](docs/adr/0072-a-full-screen-player-and-cheaper-playback.md) |
 | 9 | Opaque server-side sessions, not JWTs | See the header comment in `internal/identity/session.go` — immediate revocation is a hard requirement, and a self-contained token cannot do it without the database lookup a JWT exists to avoid |
 
 ### Defaults taken in the absence of an answer — override any of these

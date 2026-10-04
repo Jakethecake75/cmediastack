@@ -316,22 +316,27 @@ func NewService(files FileSource, vaults VaultSource, store *Store, prober *Prob
 	}
 }
 
-// PlanConversion reports whether converting this file would make it playable.
+// PlanConversion reports whether converting this file would make it playable,
+// for a browser that decodes HEVC or one that does not (ADR-0072).
 func (s *Service) PlanConversion(ctx context.Context, fileID int64,
-	target AudioTarget) (RemuxPlan, Probe, error) {
+	target AudioTarget, hevc bool) (RemuxPlan, Probe, error) {
 
 	probe, err := s.Inspect(ctx, fileID)
 	if err != nil {
 		return RemuxPlan{}, Probe{}, err
 	}
-	return PlanConvert(probe, ChromeLike, target), probe, nil
+	client := ChromeLike
+	if hevc {
+		client = ChromeLikeHEVC
+	}
+	return PlanConvert(probe, client, target), probe, nil
 }
 
 // Convert streams a converted version of a file.
 func (s *Service) Convert(w http.ResponseWriter, r *http.Request, fileID int64,
 	target AudioTarget, opts StreamOptions) error {
 
-	plan, _, err := s.PlanConversion(r.Context(), fileID, target)
+	plan, _, err := s.PlanConversion(r.Context(), fileID, target, opts.HEVC)
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package playback
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -171,4 +173,78 @@ func TestATranscodeTurnsTenBitHDRIntoPlayableVideo(t *testing.T) {
 	if d0 < 2.5 || d2 > 1.5 {
 		t.Errorf("durations %.2f from the start and %.2f from 2 s; want about 3 and 1", d0, d2)
 	}
+}
+
+// A browser that decodes HEVC gets the 4K HDR film's own picture, copied and
+// tagged hvc1, with only the sound rebuilt (ADR-0072); one that does not gets
+// the transcode.
+func TestABrowserThatDecodesHEVCGetsTheOriginalPicture(t *testing.T) {
+	p := PlanConvert(hdrFilm(), ChromeLikeHEVC, AudioAAC)
+	if !p.Possible || p.TranscodeVideo || !p.ReencodeAudio || p.AudioIndex != 1 {
+		t.Fatalf("HDR HEVC for an HEVC browser: %+v; want a copy with the audio rebuilt", p)
+	}
+	args := convertArgs(p, "aac", StreamOptions{HEVC: true})
+	if argAfter(args, "-c:v") != "copy" || argAfter(args, "-tag:v") != "hvc1" || slices.Contains(args, "-vf") {
+		t.Errorf("not a tagged copy: %v", args)
+	}
+	if h264 := convertArgs(RemuxPlan{Possible: true, VideoCodec: "h264", AudioIndex: -1}, "aac", StreamOptions{}); slices.Contains(h264, "-tag:v") {
+		t.Errorf("H.264 was given an HEVC tag: %v", h264)
+	}
+	if p := PlanConvert(hdrFilm(), ChromeLike, AudioAAC); !p.TranscodeVideo {
+		t.Errorf("for any other browser it is still a transcode: %+v", p)
+	}
+	if !slices.Equal(ChromeLike.VideoCodecs, []string{"h264", "vp8", "vp9", "av1"}) {
+		t.Errorf("ChromeLike was changed by ChromeLikeHEVC: %v", ChromeLike.VideoCodecs)
+	}
+}
+
+type countingReader struct{ n, size atomic.Int64 }
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	left := r.size.Load() - r.n.Load()
+	if left <= 0 {
+		return 0, io.EOF
+	}
+	k := min(int64(len(p)), left)
+	r.n.Add(k)
+	return int(k), nil
+}
+
+type gatedWriter struct{ gate chan struct{} }
+
+func (w gatedWriter) Write(p []byte) (int, error) { <-w.gate; return len(p), nil }
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("the viewer went away") }
+
+func waitFor(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); !ok(); time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal(what)
+		}
+	}
+}
+
+// A converted stream is produced ahead of a browser that is not reading yet
+// (ADR-0072), and a reader that goes away leaves nothing stuck behind it.
+func TestAConvertedStreamIsProducedAheadOfTheReader(t *testing.T) {
+	src := &countingReader{}
+	src.size.Store(4 << 20)
+	gate := make(chan struct{})
+	done := make(chan int64)
+	go func() { n, _ := copyAhead(gatedWriter{gate}, src, 8<<20); done <- n }()
+	waitFor(t, "the stream was not read while the writer waited", func() bool { return src.n.Load() == 4<<20 })
+	close(gate)
+	if n := <-done; n != 4<<20 {
+		t.Errorf("copied %d bytes, want %d", n, 4<<20)
+	}
+
+	src = &countingReader{}
+	src.size.Store(4 << 20)
+	if _, err := copyAhead(failingWriter{}, src, 1<<20); err == nil {
+		t.Error("a failed write was not reported")
+	}
+	waitFor(t, "the rest was not drained after the writer failed", func() bool { return src.n.Load() == 4<<20 })
 }

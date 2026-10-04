@@ -305,6 +305,8 @@
     /* Adding for a request lasts while the Add screen is open: leaving it is
      * leaving that errand, and the next visit to Add is an ordinary one. */
     if (target !== 'find') { addingFor = null; }
+    /* Leaving the player stops it and keeps the place (ADR-0072). */
+    if (target !== 'watch' && $('watch-video').getAttribute('src')) { leaveWatch(); }
     if (loaders[target]) { loaders[target](); }
   }
 
@@ -2160,7 +2162,7 @@
         /* A book is read elsewhere: its file is downloaded, not played (ADR-0049). */
         if (it.kind !== 'book') {
           acts.appendChild(button('Play', 'primary', function () {
-            watch(f.id, it.title + (it.year ? ' (' + it.year + ')' : ''));
+            watch(f.id, it.title, it.year);
           }));
         }
         /* A subtitle in each wanted language, from OpenSubtitles (ADR-0055). */
@@ -3227,11 +3229,8 @@
    * the way out; everything here deals in ids the server issued and never in
    * filenames or stream indices.
    *
-   * The subtitle menu is the browser's own. Chrome, Firefox and Safari all put
-   * a captions button in the default controls as soon as a media element has
-   * text tracks, and it already handles the things a hand-built menu gets
-   * wrong — keyboard access, the viewer's own caption styling, and full
-   * screen. Building a second one would be worse and larger.
+   * The player's own menu chooses among them (ADR-0072); the browser still
+   * draws the cues, with the viewer's own caption styling.
    */
 
   /* Enough of ISO 639-2 to cover what actually appears on releases. A code
@@ -3280,12 +3279,9 @@
    * on a deliberately malformed subtitle in a real browser. A failure handler
    * that some callers pass and others do not is not a failure handler. */
   function subtitleComplaint(label) {
-    var blockers = $('watch-blockers');
-    if (!blockers) { return; }
-    blockers.appendChild(el('div', 'item',
-      'The subtitle track \u201c' + label + '\u201d would not load. The file ' +
+    caveat('The subtitle track \u201c' + label + '\u201d would not load. The file ' +
       'is there, but this server could not turn it into something a browser ' +
-      'can show.'));
+      'can show.');
   }
 
   /* The tracks are attached to the ELEMENT, not to the source, so they survive
@@ -3360,8 +3356,53 @@
     detail.appendChild(rows);
   }
 
-  function watch(fileId, title) {
-    watchState = { fileId: fileId, title: title || 'Watch' };
+  /* The player (ADR-0072).
+   *
+   * It fills the window and has its own controls: direct play when the file
+   * allows it, else the original picture copied for a browser that decodes
+   * HEVC, else a remux or a transcode. A converted stream is a pipe, so a
+   * jump past what has arrived restarts it there (ADR-0071). */
+
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  var ICONS = {
+    back: 'M15.4 7.4 14 6l-6 6 6 6 1.4-1.4-4.6-4.6z',
+    volume: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z',
+    mute: 'M16.5 12A4.5 4.5 0 0 0 14 8v2.2l2.45 2.45c.03-.2.05-.41.05-.65zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12a9 9 0 0 0-7-8.8v2.1c2.89.86 5 3.54 5 6.7zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a9 9 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z',
+    pip: 'M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z',
+    fullscreen: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',
+    fullscreenExit: 'M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z',
+    cc: 'M19 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 14H5V6h14v12zM7 15h3a1 1 0 0 0 1-1v-1H9.5v.5h-2v-3h2v.5H11v-1a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1zm7 0h3a1 1 0 0 0 1-1v-1h-1.5v.5h-2v-3h2v.5H18v-1a1 1 0 0 0-1-1h-3a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1z',
+    speed: 'M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44zm-9.79 6.84a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z',
+    settings: 'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.48.48 0 0 0-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z',
+    play: 'M8 5v14l11-7z',
+    pause: 'M6 19h4V5H6v14zm8-14v14h4V5h-4z',
+    replay10: 'M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8zm-1.1 11h-.85v-3.26l-1.01.31v-.69l1.77-.63h.09V16zm4.28-1.76c0 .32-.03.6-.1.82s-.17.42-.29.57-.28.26-.45.33-.37.1-.59.1-.41-.03-.59-.1-.33-.18-.46-.33-.23-.34-.3-.57-.11-.5-.11-.82v-.74c0-.32.03-.6.1-.82s.17-.42.29-.57.28-.26.45-.33.37-.1.59-.1.41.03.59.1.33.18.46.33.23.34.3.57.11.5.11.82v.74zm-.85-.86c0-.19-.01-.35-.04-.48s-.07-.23-.12-.31-.11-.14-.19-.17-.16-.05-.25-.05-.18.02-.25.05-.14.09-.19.17-.09.18-.12.31-.04.29-.04.48v.97c0 .19.01.35.04.48s.07.24.12.32.11.14.19.17.16.05.25.05.18-.02.25-.05.14-.09.19-.17.09-.19.11-.32.04-.29.04-.48v-.97z',
+    forward10: 'M18 13a6 6 0 1 1-6-6v4l5-5-5-5v4a8 8 0 1 0 8 8h-2zm-7.1 3h-.85v-3.26l-1.01.31v-.69l1.77-.63h.09V16zm4.28-1.76c0 .32-.03.6-.1.82s-.17.42-.29.57-.28.26-.45.33-.37.1-.59.1-.41-.03-.59-.1-.33-.18-.46-.33-.23-.34-.3-.57-.11-.5-.11-.82v-.74c0-.32.03-.6.1-.82s.17-.42.29-.57.28-.26.45-.33.37-.1.59-.1.41.03.59.1.33.18.46.33.23.34.3.57.11.5.11.82v.74zm-.85-.86c0-.19-.01-.35-.04-.48s-.07-.23-.12-.31-.11-.14-.19-.17-.16-.05-.25-.05-.18.02-.25.05-.14.09-.19.17-.09.18-.12.31-.04.29-.04.48v.97c0 .19.01.35.04.48s.07.24.12.32.11.14.19.17.16.05.25.05.18-.02.25-.05.14-.09.19-.17.09-.19.11-.32.04-.29.04-.48v-.97z',
+    check: 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'
+  };
+
+  /* An icon is a path drawn with the DOM, never markup (no innerHTML here). */
+  function svgIcon(name) {
+    var svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    var path = document.createElementNS(SVGNS, 'path');
+    path.setAttribute('d', ICONS[name]);
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function icon(btn, name) {
+    if (btn.getAttribute('data-icon') === name && btn.firstChild) { return; }
+    btn.setAttribute('data-icon', name);
+    clear(btn);
+    btn.appendChild(svgIcon(name));
+  }
+
+  function watch(fileId, title, year) {
+    var from = window.location.hash;
+    watchState = { fileId: fileId, title: title || 'Watch', year: year || '',
+      from: from && from !== '#watch' ? from : (watchState.from || '#home') };
     /* The hash may already be #watch — switching from one film to another —
      * in which case no hashchange fires and showView never runs. So load
      * directly, and let the generation guard discard whichever of the two
@@ -3370,146 +3411,191 @@
     loaders.watch();
   }
 
-  loaders.watch = function () {
-    var mine = ++watchGeneration;
-    var video = $('watch-video');
-    var player = $('watch-player');
-    var blockers = $('watch-blockers');
-    var detail = $('watch-detail');
+  /* What is playing: the answer from /playback, and (for a converted stream)
+   * conv, below. Null when nothing is. */
+  var playingInfo = null;
+  /* The subtitle the viewer chose, by label, kept across a restart; undefined
+   * until they choose. */
+  var chosenSubtitle;
 
-    $('watch-title').textContent = watchState.title || 'Watch';
-    conv = null;
-    $('watch-seek').hidden = true;
-    clear(blockers);
-    clear(detail);
-    detail.hidden = true;
+  /* Whether this browser decodes 4K 10-bit HDR HEVC in MP4: Chrome or Edge
+   * with a GPU that does, and Safari. Asked once (ADR-0072). */
+  var hevcSupport = null;
+  function browserDecodesHEVC() {
+    if (hevcSupport) { return hevcSupport; }
+    var type = 'video/mp4; codecs="hvc1.2.4.L153.B0"';
+    hevcSupport = new Promise(function (resolve) {
+      if (!navigator.mediaCapabilities || !navigator.mediaCapabilities.decodingInfo) {
+        resolve(false);
+        return;
+      }
+      navigator.mediaCapabilities.decodingInfo({ type: 'file', video: {
+        contentType: type, width: 3840, height: 2160, bitrate: 40000000,
+        framerate: 24, transferFunction: 'pq', colorGamut: 'rec2020' } })
+        .then(function (r) { resolve(!!r.supported && browserCan(type)); },
+          function () { resolve(false); });
+    });
+    return hevcSupport;
+  }
 
-    if (!watchState.fileId) {
-      player.hidden = true;
-      $('watch-summary').textContent =
-        'Choose something from the library and press Play.';
-      return;
+  function message(text) {
+    $('watch-summary').textContent = text || '';
+    $('pl-message').hidden = !text && !$('watch-blockers').firstChild;
+  }
+
+  var toastTimer = null;
+  function toast(text, label, act) {
+    var t = $('pl-toast');
+    clear(t);
+    t.appendChild(el('span', null, text));
+    if (label) {
+      t.appendChild(button(label, null, function () { t.hidden = true; act(); }));
     }
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.hidden = true; }, label ? 9000 : 6000);
+  }
 
-    /* Stop whatever was playing before the next request goes out. Leaving the
-     * old source attached means the browser keeps streaming a file the viewer
-     * has navigated away from, which on a metered connection is somebody
-     * else's data bill. */
+  function spinner(on) { $('pl-spinner').hidden = !on; }
+
+  /* What is in the file, for Info. */
+  function fillInfo(info) {
+    var detail = $('watch-detail');
+    clear(detail);
+    detail.appendChild(el('h3', null, 'What is in this file'));
+    detail.appendChild(el('div', 'muted small', trackSummary(info)));
+    detail.appendChild(facts([
+      ['Container', info.container],
+      ['Duration', info.duration_ms ? duration(Math.round(info.duration_ms / 1000)) : ''],
+      ['Size', bytes(info.size_bytes)],
+      ['Subtitles', subtitleCount(info)],
+      /* Whether the parser ran in the jail. An operator auditing later
+       * deserves to know which guarantee this answer was taken under. */
+      ['Parsed in the sandbox', info.sandboxed ? 'yes' : 'NO']
+    ]));
+    subtitleDetail(detail, info.subtitle_tracks);
+  }
+
+  function caveat(text) {
+    $('pl-caveats').appendChild(el('div', 'item', text));
+    toast(text);
+  }
+
+  /* Stop whatever is playing. Leaving the source attached would keep the
+   * browser streaming a file nobody is watching. */
+  function stopVideo(video) {
+    releaseHold(false);
     video.pause();
     video.removeAttribute('src');
     clearTracks(video);
     video.load();
-    player.hidden = true;
-    $('watch-summary').textContent = 'Reading the file\u2026';
+    conv = null;
+    playingInfo = null;
+    spinner(false);
+  }
 
-    api('GET', '/api/v1/files/' + watchState.fileId + '/playback')
-      .then(function (res) {
-        /* Somebody asked for something else while this was in flight. */
-        if (mine !== watchGeneration) { return; }
-        if (res.status !== 200 || !res.body) {
-          $('watch-summary').textContent = '';
-          return fail(res, 'could not read that file');
+  loaders.watch = function () {
+    var mine = ++watchGeneration;
+    var video = $('watch-video');
+
+    $('watch-title').textContent = watchState.title || 'Watch';
+    $('pl-year').textContent = watchState.year || '';
+    stopVideo(video);
+    chosenSubtitle = undefined;
+    closeMenu();
+    closeInfo();
+    $('pl-toast').hidden = true;
+    clear($('watch-blockers'));
+    clear($('pl-caveats'));
+    clear($('watch-detail'));
+    showControls();
+    paint();
+
+    if (!watchState.fileId) {
+      message('Choose something from the library and press Play.');
+      return;
+    }
+    message('Reading the file\u2026');
+    spinner(true);
+
+    browserDecodesHEVC().then(function (hevc) {
+      return api('GET', '/api/v1/files/' + watchState.fileId + '/playback' + (hevc ? '?hevc=1' : ''));
+    }).then(function (res) {
+      /* Somebody asked for something else while this was in flight. */
+      if (mine !== watchGeneration) { return; }
+      spinner(false);
+      if (res.status !== 200 || !res.body) {
+        message(failure(res, 'could not read that file'));
+        return;
+      }
+      var info = res.body;
+      fillInfo(info);
+
+      /* The server's opinion is conservative on purpose. Ask the browser
+       * before refusing: it may well decode something the default set left
+       * out. */
+      var serverSaysNo = !info.direct_play;
+      var browserSaysYes = serverSaysNo && askTheBrowser(info);
+      var at = info.resume_ms > 0 ? info.resume_ms / 1000 : 0;
+
+      if (!serverSaysNo || browserSaysYes) {
+        message(null);
+        if (serverSaysNo) {
+          caveat('This server did not expect your browser to play this file, but ' +
+            'your browser says it can. Trying anyway.');
         }
-        var info = res.body;
-        $('watch-summary').textContent = info.summary || '';
-
-        /* The server's opinion is conservative on purpose. Ask the browser
-         * before refusing: it may well decode something the default set left
-         * out, and a refusal a viewer could have disproved by pressing play is
-         * the wrong kind of caution. */
-        var serverSaysNo = !info.direct_play;
-        var browserSaysYes = serverSaysNo && askTheBrowser(info);
-
-        if (serverSaysNo && !browserSaysYes) {
-          (info.blockers || []).forEach(function (b) {
-            blockers.appendChild(blockerRow(b));
-          });
-          if (!(info.blockers || []).length) {
-            blockers.appendChild(el('div', 'empty', 'This file cannot be played.'));
-          }
-
-          /* An offer, or an explanation of why there is none.
-           *
-           * Converting copies the video and rebuilds the audio, so it helps
-           * when the container or the soundtrack was the problem and does
-           * nothing when the pictures were. The server has already worked out
-           * which, so the button appears only when pressing it would achieve
-           * something — and when it would not, the reason is shown rather than
-           * the button simply being absent. */
-          if (info.can_convert) {
-            var row = el('div', 'item');
-            row.appendChild(el('div', 'title', info.convert_transcodes_video
-              ? 'This server can transcode it' : 'This server can convert it'));
-            row.appendChild(el('div', 'meta', info.convert_transcodes_video
-              ? 'The picture is re-encoded to H.264' + (info.convert_tone_maps ? ', and mapped from HDR to ordinary colour,' : '') +
-                ' as it plays. This takes a lot of the server\u2019s processor; choose 720p if it stutters.'
-              : (info.convert_reencodes_audio
-                ? 'The picture is copied unchanged and only the soundtrack is ' +
-                  'rebuilt, so this costs very little.'
-                : 'Only the container changes. The picture and sound are copied ' +
-                  'unchanged.')));
-            actions(row).appendChild(button(info.convert_transcodes_video ? 'Transcode and play' : 'Convert and play', 'primary',
-              function (btn) {
-                btn.disabled = true;
-                btn.textContent = info.convert_transcodes_video ? 'Transcoding' : 'Converting';
-                playConverted(video, player, info, info.resume_ms > 0 ? info.resume_ms / 1000 : 0);
-              }));
-            blockers.appendChild(row);
-          } else if (info.convert_why_not) {
-            blockers.appendChild(el('div', 'item', info.convert_why_not));
-          }
-        } else {
-          if (serverSaysNo) {
-            /* Said out loud rather than silently overridden. If it then fails,
-             * the viewer knows why it was attempted. */
-            blockers.appendChild(el('div', 'item',
-              'This server did not expect your browser to play this file, but ' +
-              'your browser says it can. Trying anyway.'));
-          }
-          (info.caveats || []).forEach(function (c) {
-            blockers.appendChild(el('div', 'item', c));
-          });
-          video.src = '/api/v1/files/' + watchState.fileId + '/stream';
-          attachSubtitles(video, watchState.fileId, info.subtitle_tracks);
-          player.hidden = false;
-          lastSaved = -1;
-
-          /* Resume, once the element knows how long the film is. Setting
-           * currentTime before metadata has loaded is silently ignored, which
-           * is the shape of bug that makes resume look like it works locally
-           * and not on a slow connection. */
-          if (info.resume_ms > 0) {
-            var at = info.resume_ms / 1000;
-            video.addEventListener('loadedmetadata', function once() {
-              video.removeEventListener('loadedmetadata', once);
-              if (isFinite(video.duration) && at < video.duration) {
-                video.currentTime = at;
-              }
-            });
-            blockers.appendChild(el('div', 'item',
-              'Resuming from ' + clock(at) + '. ' +
-              'Use the scrubber to start from the beginning.'));
-          } else if (info.finished) {
-            blockers.appendChild(el('div', 'item',
-              'You finished this before, so it starts from the beginning.'));
-          }
+        (info.caveats || []).forEach(caveat);
+        playDirect(video, info, at);
+      } else if (info.can_convert) {
+        message(null);
+        playConverted(video, info, at, {
+          mode: info.convert_copies_hevc ? 'copy' : (info.convert_transcodes_video ? 'transcode' : 'remux'),
+          height: 1080
+        });
+      } else {
+        /* Nothing will play it: every reason, and why converting would not
+         * help either. */
+        (info.blockers || []).forEach(function (b) {
+          $('watch-blockers').appendChild(blockerRow(b));
+        });
+        if (info.convert_why_not) {
+          $('watch-blockers').appendChild(el('div', 'item', info.convert_why_not));
         }
-
-        detail.hidden = false;
-        detail.appendChild(el('h3', null, 'What is in this file'));
-        detail.appendChild(el('div', 'muted small', trackSummary(info)));
-        detail.appendChild(facts([
-          ['Container', info.container],
-          ['Duration', info.duration_ms ? duration(Math.round(info.duration_ms / 1000)) : ''],
-          ['Size', bytes(info.size_bytes)],
-          ['Subtitles', subtitleCount(info)],
-          /* Whether the parser ran in the jail. An operator auditing later
-           * deserves to know which guarantee this answer was taken under. */
-          ['Parsed in the sandbox', info.sandboxed ? 'yes' : 'NO']
-        ]));
-        subtitleDetail(detail, info.subtitle_tracks);
-      });
+        message(info.summary || 'This file cannot be played.');
+        return;
+      }
+      if (at > 0) {
+        toast('Resuming from ' + clock(at) + '.', 'Start over', function () { seekTo(0); });
+      } else if (info.finished) {
+        toast('You finished this before, so it starts from the beginning.');
+      }
+    });
   };
+
+  function start(video) {
+    var played = video.play();
+    if (played && played.catch) {
+      played.catch(function () { showControls(); paint(); /* the viewer presses play */ });
+    }
+  }
+
+  function playDirect(video, info, at) {
+    conv = null;
+    playingInfo = info;
+    lastSaved = -1;
+    video.src = '/api/v1/files/' + watchState.fileId + '/stream';
+    attachSubtitles(video, watchState.fileId, info.subtitle_tracks);
+    restoreSubtitle(video);
+    /* Resume once the element knows how long the film is: setting currentTime
+     * before metadata has loaded is silently ignored. */
+    if (at > 0) {
+      video.addEventListener('loadedmetadata', function once() {
+        video.removeEventListener('loadedmetadata', once);
+        if (isFinite(video.duration) && at < video.duration) { video.currentTime = at; }
+      });
+    }
+    start(video);
+  }
 
   /* Which audio codec to ask the conversion for.
    *
@@ -3531,46 +3617,389 @@
     return 'aac';
   }
 
-  /* A converted stream is a pipe, so seeking is starting it again from there
-   * (ADR-0071). conv is where it started, how long the film is and what was
-   * asked for: the scrubber, the clock and a saved place are the film's time,
-   * not the stream's. Null while a file plays directly. */
+  /* A converted stream (ADR-0071, ADR-0072): where it started, how long the
+   * film is, and what was asked for — mode is copy (the original picture,
+   * for a browser that decodes HEVC), remux or transcode. The bar, the clock
+   * and a saved place are the film's time, not the stream's. Null while a
+   * file plays directly. */
   var conv = null;
 
   function filmTime(video) { return (conv ? conv.start : 0) + (video.currentTime || 0); }
+  function filmDuration(video) { return conv ? conv.duration : video.duration; }
 
-  function playConverted(video, player, info, at) {
-    var height = conv ? conv.height : 1080;
-    conv = { info: info, start: Math.max(0, Math.floor(at || 0)), height: height,
-      duration: (info.duration_ms || 0) / 1000 };
+  function playConverted(video, info, at, o) {
+    o = o || {};
+    var prev = conv || {};
+    releaseHold(false);
+    conv = { info: info, start: Math.max(0, Math.floor(at || 0)),
+      mode: o.mode || prev.mode, height: o.height || prev.height || 1080,
+      chosen: o.chosen || prev.chosen || false,
+      duration: (info.duration_ms || 0) / 1000, stalls: [] };
+    playingInfo = info;
     lastSaved = -1;
     var q = '/convert?audio=' + encodeURIComponent(conversionAudio());
     if (conv.start > 0) { q += '&start=' + conv.start; }
-    if (info.convert_transcodes_video) { q += '&height=' + conv.height; }
+    if (conv.mode === 'copy') { q += '&hevc=1'; }
+    if (conv.mode === 'transcode') { q += '&height=' + conv.height; }
     video.src = '/api/v1/files/' + watchState.fileId + q;
     /* The conversion carries video and one audio track and no subtitles, so
      * these matter MORE here than on a direct play: without them a converted
      * foreign-language film has lost its subtitles entirely. */
     attachSubtitles(video, watchState.fileId, info.subtitle_tracks, conv.start);
-    player.hidden = false;
-    var played = video.play();
-    if (played && played.catch) { played.catch(function () { /* the viewer presses play */ }); }
-
-    var range = $('watch-seek-range');
-    range.max = String(Math.floor(conv.duration));
-    range.value = String(conv.start);
-    $('watch-quality').value = String(conv.height);
-    $('watch-quality').hidden = !info.convert_transcodes_video;
-    showFilmTime(video);
-    $('watch-seek').hidden = !(conv.duration > 0);
-    $('watch-summary').textContent = info.convert_transcodes_video
-      ? 'Transcoding as it plays. Use the bar under the picture to jump.'
-      : 'Converting as it plays. Use the bar under the picture to jump.';
+    restoreSubtitle(video);
+    start(video);
+    paint();
   }
 
-  function showFilmTime(video) {
-    if (!conv) { return; }
-    $('watch-seek-time').textContent = clock(filmTime(video)) + ' / ' + clock(conv.duration);
+  function inRanges(ranges, t) {
+    for (var i = 0; i < ranges.length; i++) {
+      if (t >= ranges.start(i) && t <= ranges.end(i) - 0.5) { return true; }
+    }
+    return false;
+  }
+
+  /* A jump: a seek within what has arrived, and past it a restart there. */
+  function seekTo(t) {
+    var video = $('watch-video');
+    var total = filmDuration(video);
+    if (!isFinite(total) || total <= 0) { return; }
+    t = Math.max(0, Math.min(t, total - 1));
+    if (!conv) { video.currentTime = t; return; }
+    var local = t - conv.start;
+    if (local >= 0 && inRanges(video.buffered, local)) { video.currentTime = local; return; }
+    savePosition(video, { force: true });
+    playConverted(video, conv.info, t);
+  }
+
+  /* How far the picture has arrived, in the film's time. */
+  function loadedEnd(video) {
+    var b = video.buffered, now = video.currentTime || 0;
+    for (var i = 0; i < b.length; i++) {
+      if (now >= b.start(i) - 0.5 && now <= b.end(i)) { return (conv ? conv.start : 0) + b.end(i); }
+    }
+    return filmTime(video);
+  }
+
+  function bufferedAhead(video) { return Math.max(0, loadedEnd(video) - filmTime(video)); }
+
+  var scrubbing = false;
+  function paint() {
+    var video = $('watch-video');
+    var range = $('watch-seek-range');
+    var total = filmDuration(video);
+    var playingNow = !video.paused || !!hold;
+    var play = $('pl-play');
+    icon(play, playingNow ? 'pause' : 'play');
+    play.setAttribute('aria-label', playingNow ? 'Pause' : 'Play');
+    if (!isFinite(total) || total <= 0) {
+      $('pl-elapsed').textContent = '';
+      $('pl-remaining').textContent = '';
+      return;
+    }
+    range.max = String(Math.floor(total));
+    if (!scrubbing) { range.value = String(Math.floor(filmTime(video))); }
+    var shown = scrubbing ? Number(range.value) : filmTime(video);
+    $('pl-bar-played').setAttribute('width', (shown / total * 100) + '%');
+    $('pl-bar-loaded').setAttribute('width', (Math.min(loadedEnd(video), total) / total * 100) + '%');
+    var left = Math.max(0, total - shown);
+    var ends = new Date(Date.now() + left / (video.playbackRate || 1) * 1000);
+    $('pl-elapsed').textContent = clock(shown);
+    $('pl-remaining').textContent = '-' + clock(left) + '  /  ' +
+      ends.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  /* Waiting for a buffer (ADR-0072). A stream that barely keeps up stalls,
+   * plays half a second and stalls again; pausing until ten seconds have
+   * arrived turns that into fewer, longer waits. It goes on anyway once
+   * nothing new has arrived for three seconds: the stream has ended, or the
+   * browser has stopped fetching. */
+  var hold = null;
+  function holdForBuffer(video) {
+    var last = bufferedAhead(video), still = 0;
+    hold = setInterval(function () {
+      var ahead = bufferedAhead(video);
+      still = ahead > last + 0.05 ? 0 : still + 1;
+      last = ahead;
+      if (ahead >= 10 || still >= 6) { releaseHold(true); }
+    }, 500);
+    video.pause();
+    spinner(true);
+  }
+
+  function releaseHold(play) {
+    if (!hold) { return; }
+    clearInterval(hold);
+    hold = null;
+    spinner(false);
+    if (play) { start($('watch-video')); }
+  }
+
+  /* A stall in a converted stream. Two within 90 seconds of a 1080p
+   * transcode the viewer did not choose drop it to 720p, which is the
+   * cheapest the server makes (ADR-0072); otherwise it waits for a buffer. */
+  function stalled(video) {
+    if (!conv || hold || video.seeking || (video.currentTime || 0) < 1) { return; }
+    var now = Date.now();
+    conv.stalls = conv.stalls.filter(function (s) { return now - s < 90000; });
+    conv.stalls.push(now);
+    if (conv.mode === 'transcode' && conv.height === 1080 && !conv.chosen && conv.stalls.length >= 2) {
+      toast('The server could not keep up at 1080p, so this is now 720p.');
+      playConverted(video, conv.info, filmTime(video), { height: 720 });
+      return;
+    }
+    holdForBuffer(video);
+  }
+
+  function restoreSubtitle(video) {
+    if (chosenSubtitle === undefined) { return; }
+    var tracks = video.textTracks;
+    for (var i = 0; i < tracks.length; i++) {
+      tracks[i].mode = tracks[i].label === chosenSubtitle ? 'showing' : 'disabled';
+    }
+  }
+
+  // The menus ----------------------------------------------------------------
+
+  var menuFor = null;
+  /* rows: {label, value, checked, act}. A row with `checked` is a choice. */
+  function openMenu(owner, title, rows) {
+    var m = $('pl-menu');
+    clear(m);
+    if (title) { m.appendChild(el('div', 'pl-menu-title', title)); }
+    rows.forEach(function (r) {
+      var b = el('button');
+      b.type = 'button';
+      var choice = r.checked !== undefined;
+      b.setAttribute('role', choice ? 'menuitemradio' : 'menuitem');
+      if (choice) {
+        b.setAttribute('aria-checked', r.checked ? 'true' : 'false');
+        var tick = el('span', 'tick');
+        if (r.checked) { tick.appendChild(svgIcon('check')); }
+        b.appendChild(tick);
+      }
+      b.appendChild(el('span', null, r.label));
+      if (r.value) { b.appendChild(el('span', 'value', r.value)); }
+      b.addEventListener('click', function (e) { e.stopPropagation(); r.act(); });
+      m.appendChild(b);
+    });
+    menuFor = owner;
+    m.hidden = false;
+    closeInfo();
+    showControls();
+    var first = m.querySelector('[aria-checked="true"]') || m.querySelector('button');
+    if (first) { first.focus(); }
+  }
+
+  function closeMenu() {
+    var m = $('pl-menu');
+    /* Focus leaves with the menu, so the keys reach the player again. */
+    if (m.contains(document.activeElement)) { $('watch-player').focus(); }
+    m.hidden = true;
+    menuFor = null;
+  }
+
+  function closeInfo() {
+    $('pl-info').hidden = true;
+    $('pl-info-btn').setAttribute('aria-expanded', 'false');
+  }
+
+  function toggleMenu(owner, build) {
+    if (menuFor === owner) { closeMenu(); return; }
+    build();
+  }
+
+  function subtitleMenu() {
+    var video = $('watch-video');
+    var tracks = video.textTracks;
+    var showing = null;
+    for (var i = 0; i < tracks.length; i++) {
+      if (tracks[i].mode === 'showing') { showing = tracks[i]; }
+    }
+    var choose = function (label) {
+      chosenSubtitle = label;
+      restoreSubtitle(video);
+      closeMenu();
+    };
+    var rows = [{ label: 'Off', checked: !showing, act: function () { choose(null); } }];
+    for (var j = 0; j < tracks.length; j++) {
+      (function (t) {
+        rows.push({ label: t.label, checked: t === showing, act: function () { choose(t.label); } });
+      })(tracks[j]);
+    }
+    openMenu('cc', 'Subtitles', rows);
+  }
+
+  var SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  function speedMenu() {
+    var video = $('watch-video');
+    openMenu('speed', 'Playback speed', SPEEDS.map(function (s) {
+      return { label: s === 1 ? 'Normal' : s + '\u00d7', checked: video.playbackRate === s,
+        act: function () {
+          video.playbackRate = s;
+          video.defaultPlaybackRate = s;
+          closeMenu();
+          paint();
+        } };
+    }));
+  }
+
+  function sizeName(v) {
+    if (!v) { return ''; }
+    var h = v.height || 0;
+    var name = h > 1600 ? '4K' : (h > 900 ? '1080p' : (h > 600 ? '720p' : h + 'p'));
+    return name + (v.hdr ? ' HDR' : '');
+  }
+
+  /* What the quality menu offers: the original whenever it can play, and the
+   * two transcode heights when the picture can be transcoded. */
+  function qualities() {
+    var video = $('watch-video');
+    var source = sizeName(((playingInfo || {}).video || [])[0]);
+    var original = 'Original' + (source ? ' \u2014 ' + source : '');
+    if (!conv) { return [{ label: original, checked: true, act: closeMenu }]; }
+    var info = conv.info;
+    var rows = [];
+    var change = function (o) {
+      o.chosen = true;
+      closeMenu();
+      playConverted(video, info, filmTime(video), o);
+    };
+    if (conv.mode !== 'transcode' || info.convert_copies_hevc) {
+      rows.push({ label: original, checked: conv.mode !== 'transcode',
+        act: function () {
+          if (conv.mode !== 'transcode') { closeMenu(); return; }
+          change({ mode: 'copy' });
+        } });
+    }
+    if (conv.mode === 'transcode' || info.convert_copies_hevc) {
+      [1080, 720].forEach(function (h) {
+        rows.push({ label: h + 'p', checked: conv.mode === 'transcode' && conv.height === h,
+          act: function () { change({ mode: 'transcode', height: h }); } });
+      });
+    }
+    return rows;
+  }
+
+  function qualityName() {
+    var rows = qualities();
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].checked) { return rows[i].label.indexOf('Original') === 0 ? 'Original' : rows[i].label; }
+    }
+    return '';
+  }
+
+  var ASPECTS = [['contain', 'Fit'], ['cover', 'Fill'], ['fill', 'Stretch']];
+  function settingsMenu() {
+    var video = $('watch-video');
+    var fit = video.classList.contains('fit-cover') ? 'cover'
+      : (video.classList.contains('fit-fill') ? 'fill' : 'contain');
+    var fitName = ASPECTS.filter(function (a) { return a[0] === fit; })[0][1];
+    openMenu('settings', null, [
+      { label: 'Aspect Ratio', value: fitName, act: function () {
+        openMenu('settings', 'Aspect Ratio', ASPECTS.map(function (a) {
+          return { label: a[1], checked: a[0] === fit,
+            act: function () {
+              video.classList.remove('fit-cover', 'fit-fill');
+              if (a[0] !== 'contain') { video.classList.add('fit-' + a[0]); }
+              closeMenu();
+            } };
+        }));
+      } },
+      { label: 'Quality', value: qualityName(), act: function () {
+        openMenu('settings', 'Quality', qualities());
+      } },
+      { label: 'Stats for Nerds', value: $('pl-stats').hidden ? 'Off' : 'On', act: function () {
+        toggleStats();
+        closeMenu();
+      } }
+    ]);
+  }
+
+  // Stats for nerds -----------------------------------------------------------
+
+  var statsTimer = null;
+  function toggleStats() {
+    var box = $('pl-stats');
+    box.hidden = !box.hidden;
+    clearInterval(statsTimer);
+    if (!box.hidden) {
+      paintStats();
+      statsTimer = setInterval(paintStats, 1000);
+    }
+  }
+
+  function modeName() {
+    if (!playingInfo) { return '\u2014'; }
+    if (!conv) { return 'Direct play'; }
+    if (conv.mode === 'copy') { return 'Original picture copied, sound converted'; }
+    if (conv.mode === 'remux') {
+      return conv.info.convert_reencodes_audio ? 'Picture copied, sound converted' : 'Container converted';
+    }
+    return 'Transcoding to ' + conv.height + 'p' + (conv.info.convert_tone_maps ? ', HDR mapped to SDR' : '');
+  }
+
+  function paintStats() {
+    var video = $('watch-video');
+    var box = $('pl-stats');
+    var q = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : null;
+    var rows = [
+      ['Mode', modeName()],
+      ['Source', playingInfo ? trackSummary({ video: playingInfo.video }) : '\u2014'],
+      ['Picture', video.videoWidth ? video.videoWidth + '\u00d7' + video.videoHeight : '\u2014'],
+      ['Buffered ahead', bufferedAhead(video).toFixed(1) + ' s'],
+      ['Dropped frames', q ? q.droppedVideoFrames + ' of ' + q.totalVideoFrames : '\u2014'],
+      ['Speed', video.playbackRate + '\u00d7']
+    ];
+    clear(box);
+    rows.forEach(function (r) {
+      box.appendChild(el('dt', null, r[0]));
+      box.appendChild(el('dd', null, r[1]));
+    });
+  }
+
+  // Showing and hiding the controls ----------------------------------------------
+
+  var idleTimer = null;
+  function showControls() {
+    var p = $('watch-player');
+    p.classList.remove('idle');
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () {
+      if (!$('watch-video').paused && $('pl-menu').hidden && $('pl-info').hidden) {
+        p.classList.add('idle');
+      }
+    }, 3000);
+  }
+
+  function togglePlay() {
+    var video = $('watch-video');
+    if (hold) { releaseHold(false); paint(); return; }
+    if (video.paused) { start(video); } else { video.pause(); }
+  }
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(function () { /* already out */ });
+    } else if ($('watch-player').requestFullscreen) {
+      $('watch-player').requestFullscreen().catch(function () { /* refused */ });
+    }
+  }
+
+  function setVolume(v) {
+    var video = $('watch-video');
+    video.volume = Math.max(0, Math.min(1, v));
+    video.muted = video.volume === 0;
+  }
+
+  /* Leaving the player: the place is saved, the stream stopped. */
+  function leaveWatch() {
+    var video = $('watch-video');
+    if (video.getAttribute('src')) { savePosition(video, { force: true }); }
+    stopVideo(video);
+    closeMenu();
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(function () { /* already out */ });
+    }
   }
 
   /* Whether this browser contradicts the server's refusal. Only the codec
@@ -3646,34 +4075,143 @@
 
   function wireWatch() {
     var video = $('watch-video');
+    var player = $('watch-player');
+    var range = $('watch-seek-range');
+
+    var icons = player.querySelectorAll('[data-icon]');
+    for (var i = 0; i < icons.length; i++) {
+      icons[i].appendChild(svgIcon(icons[i].getAttribute('data-icon')));
+    }
+    $('pl-full').hidden = !document.fullscreenEnabled;
+    $('pl-pip').hidden = !document.pictureInPictureEnabled;
+    try {
+      var saved = window.localStorage.getItem('cms.volume');
+      if (saved !== null && isFinite(Number(saved))) { setVolume(Number(saved)); }
+    } catch (e) { /* storage refused: full volume */ }
 
     /* Every ten seconds of playback, and on the events that mean somebody
      * stopped: pausing, seeking, and reaching the end. */
     video.addEventListener('timeupdate', function () {
       if (!video.paused) { savePosition(video); }
-      if (conv && document.activeElement !== $('watch-seek-range')) {
-        $('watch-seek-range').value = String(Math.floor(filmTime(video)));
-        showFilmTime(video);
-      }
+      paint();
     });
-    /* Jumping in a converted stream starts it again from there; so does
-     * choosing another picture size. */
-    $('watch-seek-range').addEventListener('input', function () {
-      if (conv) { $('watch-seek-time').textContent = clock(Number(this.value)) + ' / ' + clock(conv.duration); }
+    ['progress', 'durationchange', 'ratechange'].forEach(function (ev) {
+      video.addEventListener(ev, paint);
     });
-    $('watch-seek-range').addEventListener('change', function () {
-      if (!conv) { return; }
+    video.addEventListener('play', function () { paint(); showControls(); });
+    video.addEventListener('pause', function () {
       savePosition(video, { force: true });
-      playConverted(video, $('watch-player'), conv.info, Number(this.value));
+      paint();
+      showControls();
     });
-    $('watch-quality').addEventListener('change', function () {
-      if (!conv) { return; }
-      conv.height = Number(this.value) === 720 ? 720 : 1080;
-      playConverted(video, $('watch-player'), conv.info, filmTime(video));
-    });
-    video.addEventListener('pause', function () { savePosition(video, { force: true }); });
     video.addEventListener('seeked', function () { savePosition(video, { force: true }); });
     video.addEventListener('ended', function () { savePosition(video, { force: true }); });
+    video.addEventListener('waiting', function () { spinner(true); stalled(video); });
+    video.addEventListener('seeking', function () { spinner(true); });
+    video.addEventListener('playing', function () { spinner(!!hold); });
+    video.addEventListener('canplay', function () { spinner(!!hold); });
+    video.addEventListener('volumechange', function () {
+      var off = video.muted || video.volume === 0;
+      icon($('pl-mute'), off ? 'mute' : 'volume');
+      $('pl-mute').setAttribute('aria-label', off ? 'Unmute' : 'Mute');
+      $('pl-volume').value = String(off ? 0 : video.volume);
+      try { window.localStorage.setItem('cms.volume', String(video.volume)); } catch (e) { /* not kept */ }
+    });
+
+    /* The bar shows where it would go while dragged; letting go jumps. */
+    range.addEventListener('input', function () { scrubbing = true; paint(); });
+    range.addEventListener('change', function () {
+      scrubbing = false;
+      seekTo(Number(range.value));
+    });
+
+    $('pl-back').addEventListener('click', function () {
+      window.location.hash = watchState.from || '#home';
+    });
+    $('pl-play').addEventListener('click', togglePlay);
+    $('pl-back10').addEventListener('click', function () { seekTo(filmTime(video) - 10); });
+    $('pl-fwd10').addEventListener('click', function () { seekTo(filmTime(video) + 10); });
+    $('pl-volume').addEventListener('input', function () { setVolume(Number(this.value)); });
+    $('pl-mute').addEventListener('click', function () {
+      if (video.muted || video.volume === 0) {
+        video.muted = false;
+        if (video.volume === 0) { video.volume = 1; }
+      } else {
+        video.muted = true;
+      }
+    });
+    $('pl-full').addEventListener('click', toggleFullscreen);
+    document.addEventListener('fullscreenchange', function () {
+      icon($('pl-full'), document.fullscreenElement ? 'fullscreenExit' : 'fullscreen');
+      $('pl-full').setAttribute('aria-label', document.fullscreenElement ? 'Exit full screen' : 'Full screen');
+    });
+    $('pl-pip').addEventListener('click', function () {
+      if (document.pictureInPictureElement) {
+        document.exitPictureInPicture().catch(function () { /* already out */ });
+      } else {
+        video.requestPictureInPicture().catch(function () { /* refused */ });
+      }
+    });
+    $('pl-cc').addEventListener('click', function () { toggleMenu('cc', subtitleMenu); });
+    $('pl-speed').addEventListener('click', function () { toggleMenu('speed', speedMenu); });
+    $('pl-settings').addEventListener('click', function () { toggleMenu('settings', settingsMenu); });
+    $('pl-info-btn').addEventListener('click', function () {
+      var open = $('pl-info').hidden;
+      closeMenu();
+      $('pl-info').hidden = !open;
+      this.setAttribute('aria-expanded', open ? 'true' : 'false');
+      showControls();
+    });
+
+    /* A click on the picture plays or pauses, or closes whatever is open. */
+    video.addEventListener('click', function () {
+      if (!$('pl-menu').hidden || !$('pl-info').hidden) {
+        closeMenu();
+        closeInfo();
+        return;
+      }
+      togglePlay();
+    });
+    video.addEventListener('dblclick', toggleFullscreen);
+    player.addEventListener('click', function (e) {
+      if (menuFor && !$('pl-menu').contains(e.target) && !e.target.closest('[aria-haspopup]')) {
+        closeMenu();
+      }
+    });
+    ['mousemove', 'touchstart'].forEach(function (ev) {
+      player.addEventListener(ev, showControls, { passive: true });
+    });
+
+    /* The keys, while the player is open. Typing in a field, or a key a
+     * focused button or slider already answers, is left alone. */
+    document.addEventListener('keydown', function (e) {
+      if (document.querySelector('[data-view="watch"]').hidden) { return; }
+      if (e.ctrlKey || e.metaKey || e.altKey) { return; }
+      var t = e.target, tag = (t.tagName || '').toLowerCase();
+      var slider = tag === 'input' && t.type === 'range';
+      if ((tag === 'input' && !slider) || tag === 'select' || tag === 'textarea') { return; }
+      var k = e.key;
+      if (k === 'Escape') {
+        if (!$('pl-menu').hidden) { closeMenu(); } else if (!$('pl-info').hidden) { closeInfo(); } else { $('pl-back').click(); }
+      } else if (k === ' ' || k === 'k') {
+        /* Space plays and pauses even after a click on a control; only in an
+         * open menu does it choose. */
+        if (k === ' ' && $('pl-menu').contains(t)) { return; }
+        togglePlay();
+      } else if ((k === 'ArrowLeft' || k === 'ArrowRight') && !slider) {
+        seekTo(filmTime(video) + (k === 'ArrowLeft' ? -10 : 10));
+      } else if ((k === 'ArrowUp' || k === 'ArrowDown') && !slider && $('pl-menu').hidden) {
+        setVolume((video.muted ? 0 : video.volume) + (k === 'ArrowUp' ? 0.05 : -0.05));
+      } else if (k === 'm') {
+        $('pl-mute').click();
+      } else if (k === 'f') {
+        toggleFullscreen();
+      } else {
+        return;
+      }
+      e.preventDefault();
+      showControls();
+    });
 
     /* The unload path. pagehide rather than beforeunload or unload: it is the
      * one that fires on mobile Safari and on a backgrounded tab being
@@ -3690,9 +4228,15 @@
     });
     /* A <video> that fails reports almost nothing useful. Turning its numeric
      * code into a sentence is the difference between "it does not work" and
-     * something a person can act on. */
+     * something a person can act on. A browser that said it decodes HEVC and
+     * then does not is given the transcode instead, once (ADR-0072). */
     video.addEventListener('error', function () {
       var e = video.error;
+      if (conv && conv.mode === 'copy' && e && (e.code === 3 || e.code === 4)) {
+        toast('Your browser could not show the original picture, so it is being transcoded.');
+        playConverted(video, conv.info, filmTime(video), { mode: 'transcode', height: 1080 });
+        return;
+      }
       var why = 'this browser could not play the file';
       if (e) {
         if (e.code === 3) { why = 'this browser could not decode the file'; }
@@ -3700,7 +4244,8 @@
         else if (e.code === 2) { why = 'the connection to the server dropped'; }
         else if (e.code === 1) { why = 'playback was stopped'; }
       }
-      refuse(why + '. The file details below say what is in it.');
+      spinner(false);
+      message(why.charAt(0).toUpperCase() + why.slice(1) + '. Info says what is in it.');
     });
   }
 

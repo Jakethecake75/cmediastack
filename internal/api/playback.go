@@ -34,7 +34,8 @@ type PlaybackService interface {
 	// InProgress is the caller's unfinished places, newest first (ADR-0069).
 	InProgress(ctx context.Context, limit int) ([]playback.InProgressItem, error)
 	// PlanConversion reports whether converting a file would make it playable.
-	PlanConversion(ctx context.Context, fileID int64, target playback.AudioTarget) (playback.RemuxPlan, playback.Probe, error)
+	// hevc is the browser saying it decodes HEVC Main10 and HDR (ADR-0072).
+	PlanConversion(ctx context.Context, fileID int64, target playback.AudioTarget, hevc bool) (playback.RemuxPlan, playback.Probe, error)
 	// Convert streams a converted version of a file.
 	Convert(w http.ResponseWriter, r *http.Request, fileID int64, target playback.AudioTarget, opts playback.StreamOptions) error
 	// ListSubtitles reports every subtitle track a file has, usable or not.
@@ -247,7 +248,7 @@ func (h *Handlers) PlaybackInfo(w http.ResponseWriter, r *http.Request) {
 	// is anything to try next, and "no, because the picture itself is the
 	// problem" is a better answer than an absent button.
 	if !plan.DirectPlay {
-		conv, _, cerr := h.playback.PlanConversion(r.Context(), id, playback.AudioAAC)
+		conv, _, cerr := h.playback.PlanConversion(r.Context(), id, playback.AudioAAC, false)
 		if cerr == nil {
 			body["can_convert"] = conv.Possible
 			if !conv.Possible {
@@ -258,6 +259,13 @@ func (h *Handlers) PlaybackInfo(w http.ResponseWriter, r *http.Request) {
 				// the viewer is told which this is (ADR-0071).
 				body["convert_transcodes_video"] = conv.TranscodeVideo
 				body["convert_tone_maps"] = conv.ToneMap
+			}
+		}
+		// A browser that decodes HEVC (hevc=1) is told when it can have the
+		// original picture copied instead of transcoded (ADR-0072).
+		if cerr == nil && conv.TranscodeVideo && r.URL.Query().Get("hevc") == "1" {
+			if hc, _, err := h.playback.PlanConversion(r.Context(), id, playback.AudioAAC, true); err == nil && hc.Possible && !hc.TranscodeVideo {
+				body["convert_copies_hevc"] = true
 			}
 		}
 	}
@@ -324,9 +332,10 @@ func (h *Handlers) ConvertFile(w http.ResponseWriter, r *http.Request) {
 }
 
 // convertOptions reads where a converted stream starts, in whole seconds, and
-// how tall a transcode is (ADR-0071), or says what is wrong with them.
+// how tall a transcode is (ADR-0071), and whether the browser decodes HEVC
+// (ADR-0072), or says what is wrong with them.
 func convertOptions(q url.Values) (playback.StreamOptions, string) {
-	var opts playback.StreamOptions
+	opts := playback.StreamOptions{HEVC: q.Get("hevc") == "1"}
 	if raw := q.Get("start"); raw != "" {
 		n, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || n < 0 {
