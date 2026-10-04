@@ -62,7 +62,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	g "github.com/anacrolix/generics"
 	"github.com/anacrolix/torrent"
+	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/storage"
 
 	"github.com/jakethecake75/cmediastack/internal/egress"
@@ -358,7 +360,11 @@ func New(cfg Config, guard *egress.Guard, notes []string) (*Engine, error) {
 	tc.Bep20 = "-CM0001-"
 	tc.ExtendedHandshakeClientVersion = "CMediaStack"
 
-	tc.DefaultStorage = storage.NewFileByInfoHash(cfg.DataDir)
+	st, note := fileStorage(cfg.DataDir)
+	if note != "" {
+		notes = append(notes, note)
+	}
+	tc.DefaultStorage = st
 
 	client, err := torrent.NewClient(tc)
 	if err != nil {
@@ -379,6 +385,54 @@ func New(cfg Config, guard *egress.Guard, notes []string) (*Engine, error) {
 		client:      client, cfg: cfg, guard: guard, notes: notes,
 		addedAt: make(map[string]time.Time), now: time.Now,
 	}, nil
+}
+
+// fileStorage keeps each transfer under <dir>/<infohash>, written under its
+// final names, with the record of finished pieces in a bolt file in dir
+// (ADR-0073).
+//
+// Not the library's default. Its part files make opening a torrent mark every
+// piece of an unfinished file incomplete, so a restart fetched every partial
+// file again from nothing. When the record cannot be opened, finished pieces
+// are remembered only until a restart, and the note says so.
+func fileStorage(dir string) (storage.ClientImplCloser, string) {
+	note := ""
+	completion, err := storage.NewDefaultPieceCompletionForDir(dir)
+	if err != nil {
+		completion = storage.NewMapPieceCompletion()
+		note = "the record of finished pieces could not be opened (" + err.Error() +
+			"); until it can, a restart downloads unfinished files again"
+	}
+	return storage.NewFileOpts(storage.NewFileClientOpts{
+		ClientBaseDir: dir,
+		TorrentDirMaker: func(base string, info *metainfo.Info, ih metainfo.Hash) string {
+			torrentDir := filepath.Join(base, ih.HexString())
+			adoptPartFiles(torrentDir, info)
+			return torrentDir
+		},
+		PieceCompletion: completion,
+		UsePartFiles:    g.Some(false),
+	}), note
+}
+
+// adoptPartFiles renames what an earlier version left as "<file>.part" to the
+// file's own name, once, so an upgrade keeps that data instead of leaving it
+// beside a fresh copy. Pieces it holds that are not recorded as finished are
+// fetched again.
+func adoptPartFiles(torrentDir string, info *metainfo.Info) {
+	if info == nil {
+		return
+	}
+	for _, f := range info.UpvertedFiles() {
+		name := filepath.Join(append([]string{torrentDir, info.BestName()}, f.BestPath()...)...)
+		// The names come from the torrent: nothing outside its own directory.
+		if !strings.HasPrefix(name, torrentDir+string(filepath.Separator)) {
+			continue
+		}
+		if _, err := os.Stat(name); errors.Is(err, fs.ErrNotExist) {
+			_ = os.Rename(name+".part", name)
+		}
+	}
 }
 
 // Notes returns the human-readable consequences of the derived configuration.

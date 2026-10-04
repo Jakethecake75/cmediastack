@@ -3378,7 +3378,8 @@
     pause: 'M6 19h4V5H6v14zm8-14v14h4V5h-4z',
     replay10: 'M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8zm-1.1 11h-.85v-3.26l-1.01.31v-.69l1.77-.63h.09V16zm4.28-1.76c0 .32-.03.6-.1.82s-.17.42-.29.57-.28.26-.45.33-.37.1-.59.1-.41-.03-.59-.1-.33-.18-.46-.33-.23-.34-.3-.57-.11-.5-.11-.82v-.74c0-.32.03-.6.1-.82s.17-.42.29-.57.28-.26.45-.33.37-.1.59-.1.41.03.59.1.33.18.46.33.23.34.3.57.11.5.11.82v.74zm-.85-.86c0-.19-.01-.35-.04-.48s-.07-.23-.12-.31-.11-.14-.19-.17-.16-.05-.25-.05-.18.02-.25.05-.14.09-.19.17-.09.18-.12.31-.04.29-.04.48v.97c0 .19.01.35.04.48s.07.24.12.32.11.14.19.17.16.05.25.05.18-.02.25-.05.14-.09.19-.17.09-.19.11-.32.04-.29.04-.48v-.97z',
     forward10: 'M18 13a6 6 0 1 1-6-6v4l5-5-5-5v4a8 8 0 1 0 8 8h-2zm-7.1 3h-.85v-3.26l-1.01.31v-.69l1.77-.63h.09V16zm4.28-1.76c0 .32-.03.6-.1.82s-.17.42-.29.57-.28.26-.45.33-.37.1-.59.1-.41-.03-.59-.1-.33-.18-.46-.33-.23-.34-.3-.57-.11-.5-.11-.82v-.74c0-.32.03-.6.1-.82s.17-.42.29-.57.28-.26.45-.33.37-.1.59-.1.41.03.59.1.33.18.46.33.23.34.3.57.11.5.11.82v.74zm-.85-.86c0-.19-.01-.35-.04-.48s-.07-.23-.12-.31-.11-.14-.19-.17-.16-.05-.25-.05-.18.02-.25.05-.14.09-.19.17-.09.18-.12.31-.04.29-.04.48v.97c0 .19.01.35.04.48s.07.24.12.32.11.14.19.17.16.05.25.05.18-.02.25-.05.14-.09.19-.17.09-.19.11-.32.04-.29.04-.48v-.97z',
-    check: 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'
+    check: 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+    cast: 'M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z'
   };
 
   /* An icon is a path drawn with the DOM, never markup (no innerHTML here). */
@@ -3484,6 +3485,7 @@
   /* Stop whatever is playing. Leaving the source attached would keep the
    * browser streaming a file nobody is watching. */
   function stopVideo(video) {
+    stopFeed();
     releaseHold(false);
     video.pause();
     video.removeAttribute('src');
@@ -3580,6 +3582,7 @@
   }
 
   function playDirect(video, info, at) {
+    stopFeed();
     conv = null;
     playingInfo = info;
     lastSaved = -1;
@@ -3637,11 +3640,19 @@
       duration: (info.duration_ms || 0) / 1000, stalls: [] };
     playingInfo = info;
     lastSaved = -1;
-    var q = '/convert?audio=' + encodeURIComponent(conversionAudio());
+    var audio = conversionAudio();
+    var q = '/convert?audio=' + encodeURIComponent(audio);
     if (conv.start > 0) { q += '&start=' + conv.start; }
     if (conv.mode === 'copy') { q += '&hevc=1'; }
     if (conv.mode === 'transcode') { q += '&height=' + conv.height; }
-    video.src = '/api/v1/files/' + watchState.fileId + q;
+    var url = '/api/v1/files/' + watchState.fileId + q;
+    var type = convertedType(info, conv.mode, audio);
+    if (canFeed(type)) {
+      feedStream(video, url, type);
+    } else {
+      stopFeed();
+      video.src = url;
+    }
     /* The conversion carries video and one audio track and no subtitles, so
      * these matter MORE here than on a direct play: without them a converted
      * foreign-language film has lost its subtitles entirely. */
@@ -3649,6 +3660,132 @@
     restoreSubtitle(video);
     start(video);
     paint();
+  }
+
+  /* A converted stream, fetched by the player and fed to the picture through
+   * Media Source (ADR-0073).
+   *
+   * Given the address itself, Chrome keeps at most about 2.5 seconds of a
+   * stream it cannot seek in, so any hiccup on the network stalls the picture
+   * (measured on the operator's server). Fetched here, up to a minute is kept
+   * in hand, and what was played more than 20 seconds ago is let go. A browser
+   * without Media Source, or that cannot take this stream's codecs through it,
+   * is given the address as before. */
+  var feed = null;
+  var FEED_AHEAD = 60, FEED_BEHIND = 20, FEED_CHUNK = 2 << 20;
+
+  function stopFeed() {
+    if (feed) { feed.ctl.abort(); feed = null; }
+  }
+
+  /* The type of a converted stream, for Media Source: the picture as the plan
+   * makes it, and the default sound, rebuilt or copied. Empty when it cannot
+   * be said, and the address is used instead. */
+  function convertedType(info, mode, audio) {
+    var v = (info.video || [])[0] || {};
+    var vc = mode === 'transcode' ? 'avc1.640028' : ({
+      hevc: v.bit_depth > 8 ? 'hvc1.2.4.L153.B0' : 'hvc1.1.6.L153.B0',
+      h264: 'avc1.640028', av1: 'av01.0.08M.08', vp9: 'vp09.00.40.08'
+    })[v.codec];
+    var tracks = info.audio || [];
+    var a = tracks.filter(function (t) { return t.default; })[0] || tracks[0];
+    var ac = '';
+    if (a) {
+      ac = mode !== 'remux' || info.convert_reencodes_audio
+        ? (audio === 'opus' ? 'opus' : 'mp4a.40.2')
+        : ({ aac: 'mp4a.40.2', mp3: 'mp4a.6B', opus: 'opus', flac: 'flac' })[a.codec];
+    }
+    if (!vc || (a && !ac)) { return ''; }
+    return 'video/mp4; codecs="' + vc + (ac ? ', ' + ac : '') + '"';
+  }
+
+  function canFeed(type) {
+    try { return !!type && !!window.MediaSource && MediaSource.isTypeSupported(type); } catch (e) { return false; }
+  }
+
+  function feedStream(video, url, type) {
+    stopFeed();
+    var me = { ctl: new AbortController() };
+    feed = me;
+    var ms = new MediaSource();
+    var queue = [], queued = 0, done = false, sb = null, reader = null, reading = false;
+    var ahead = FEED_AHEAD;
+
+    function mine() { return feed === me; }
+
+    function read() {
+      if (!mine() || !reader || reading || done) { return; }
+      if (bufferedAhead(video) > ahead || queued > 4 * FEED_CHUNK) {
+        setTimeout(read, 1000);
+        return;
+      }
+      reading = true;
+      reader.read().then(function (r) {
+        reading = false;
+        if (!mine()) { return; }
+        if (r.done) { done = true; } else { queue.push(r.value); queued += r.value.length; }
+        pump();
+        read();
+      }, function () { reading = false; });
+    }
+
+    function pump() {
+      if (!mine() || !sb || sb.updating) { return; }
+      var b = sb.buffered, now = video.currentTime;
+      if (b.length && now - b.start(0) > FEED_BEHIND + 10) {
+        sb.remove(0, now - FEED_BEHIND);
+        return;
+      }
+      if (queue.length) {
+        var size = 0, n = 0;
+        while (n < queue.length && size < FEED_CHUNK) { size += queue[n].length; n++; }
+        var chunk = new Uint8Array(size), at = 0;
+        queue.splice(0, n).forEach(function (c) { chunk.set(c, at); at += c.length; });
+        queued -= size;
+        try {
+          sb.appendBuffer(chunk);
+        } catch (e) {
+          if (e.name !== 'QuotaExceededError') { throw e; }
+          /* The browser holds less than a minute of this: keep what it can. */
+          queue.unshift(chunk);
+          queued += size;
+          ahead = Math.max(5, bufferedAhead(video) - 2);
+          setTimeout(pump, 1000);
+        }
+        return;
+      }
+      if (done && ms.readyState === 'open') { ms.endOfStream(); }
+    }
+
+    ms.addEventListener('sourceopen', function () {
+      if (!mine()) { return; }
+      URL.revokeObjectURL(video.src);
+      try {
+        sb = ms.addSourceBuffer(type);
+      } catch (e) {
+        /* Said it could and cannot: the address, as before. */
+        feed = null;
+        video.src = url;
+        start(video);
+        return;
+      }
+      sb.addEventListener('updateend', function () { pump(); read(); });
+      fetch(url, { credentials: 'same-origin', signal: me.ctl.signal }).then(function (res) {
+        if (!mine()) { return; }
+        if (!res.ok) {
+          return res.json().catch(function () { return {}; }).then(function (body) {
+            if (!mine()) { return; }
+            spinner(false);
+            message((body && body.error) || 'The server would not convert this file.');
+          });
+        }
+        reader = res.body.getReader();
+        read();
+      }).catch(function () {
+        if (mine()) { spinner(false); message('The connection to the server dropped.'); }
+      });
+    }, { once: true });
+    video.src = URL.createObjectURL(ms);
   }
 
   function inRanges(ranges, t) {
@@ -3947,6 +4084,7 @@
       ['Source', playingInfo ? trackSummary({ video: playingInfo.video }) : '\u2014'],
       ['Picture', video.videoWidth ? video.videoWidth + '\u00d7' + video.videoHeight : '\u2014'],
       ['Buffered ahead', bufferedAhead(video).toFixed(1) + ' s'],
+      ['Loading', feed ? 'by the player, up to ' + FEED_AHEAD + ' s ahead' : 'by the browser'],
       ['Dropped frames', q ? q.droppedVideoFrames + ' of ' + q.totalVideoFrames : '\u2014'],
       ['Speed', video.playbackRate + '\u00d7']
     ];
@@ -4083,6 +4221,20 @@
       icons[i].appendChild(svgIcon(icons[i].getAttribute('data-icon')));
     }
     $('pl-full').hidden = !document.fullscreenEnabled;
+    /* Casting is the browser's own (ADR-0073): Chrome and Edge to a Cast
+     * device, Safari to AirPlay. The button shows while a device can take
+     * this video. */
+    if (video.remote && video.remote.watchAvailability) {
+      video.remote.watchAvailability(function (yes) { $('pl-cast').hidden = !yes; })
+        .catch(function () { /* the browser cannot say: no button */ });
+      $('pl-cast').addEventListener('click', function () {
+        video.remote.prompt().catch(function (e) {
+          if (e.name !== 'AbortError') { toast('This video cannot be cast from this browser.'); }
+        });
+      });
+      video.remote.addEventListener('connect', function () { toast('Casting.'); });
+      video.remote.addEventListener('disconnect', function () { toast('Stopped casting.'); });
+    }
     $('pl-pip').hidden = !document.pictureInPictureEnabled;
     try {
       var saved = window.localStorage.getItem('cms.volume');

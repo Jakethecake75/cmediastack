@@ -53,7 +53,7 @@ Phase 6 stops at 6n (2026-10-03): the owner deferred audiobooks and anime's
 absolute numbering, to be added if they are needed.
 Phase 7 is the Proxmox deployment: 7a sets a SOCKS5 proxy from the web and adds
 Getting started, with the install scripts and v0.1.0; 7b (v0.1.1) fixes what the
-first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added, and 7i (v0.4.1, v0.4.2) plays in a full-window player that keeps up.
+first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added, 7i (v0.4.1, v0.4.2) plays in a full-window player that keeps up, and 7j (v0.4.3) lets the player load its own stream, keeps downloads across a restart and casts.
 **Scope change, 2026-09-26:** the operator is starting a new library rather than
 migrating one. Migrating from Sonarr is dropped; the Radarr importer (4g) stays,
 and does nothing unless a Radarr database is placed in its directory
@@ -66,7 +66,7 @@ and does nothing unless a Radarr database is placed in its directory
 | | |
 |---|---|
 | Go packages | 38 |
-| Tests | 1493, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Tests | 1495, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached (run again at 6l, after 6h made `golang.org/x/net/html` reached code). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
 | Routes registered | 153 (15 anonymous, 51 admin-hidden, 19 session-only). **0 of 153 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
@@ -5529,6 +5529,45 @@ and leaving freed the conversion within 50 ms.
 
 ---
 
+### Increment 7j (v0.4.3) — the player loads its own stream, downloads survive a restart, casting ✅
+
+Reported after v0.4.2: Project Hail Mary still buffered (less often), a
+restart started downloads again from nothing, and the player could not cast.
+[ADR-0073](docs/adr/0073-player-loading-torrent-resume-casting.md) was written
+first.
+
+**What was found.** In the operator's Chrome, on the copy path, Chrome never
+held more than 2.7 s ahead over 86 s of playback, and stalled at 1:28, against a
+server that sends the stream at 75 Mb/s. In the torrent library, file storage's
+default part files mark every piece of an unfinished file incomplete each time
+a torrent is opened; the operator's *Air* download showed, after a restart,
+finished bytes equal to the bytes received since it.
+
+| What | How |
+|---|---|
+| **The player loads a converted stream** | `fetch` into a Media Source `SourceBuffer`, up to 60 s ahead and 20 s behind, keeping what fits when the browser's limit is reached. The type is built from the plan; a browser without Media Source, or that refuses the type, gets the address as before. A refused conversion shows the server's message. Stats for Nerds says what is loading the stream |
+| **Downloads survive a restart** | The engine builds its file storage itself: part files off, the bolt record of finished pieces opened explicitly, and a note on Downloads if it cannot be. A `.part` file from an earlier version is renamed to its own name when the torrent is next opened, inside the transfer's own directory only |
+| **Casting** | A Cast button while a device can take the video (`remote.watchAvailability`), opening the browser's own picker: Cast in Chrome and Edge, AirPlay in Safari |
+
+#### Verified
+
+| Claim | How it is established |
+|---|---|
+| A piece finished before a restart is still finished after it, the file is under its own name in `<dir>/<infohash>`, and an unwritten piece is not | `download.TestARestartKeepsTheFinishedPiecesOfAnUnfinishedFile` — mutation-verified |
+| An earlier version's `.part` file is adopted, and a name leading out of the transfer's directory is not | `download.TestPartFilesFromAnEarlierVersionAreAdopted` — mutation-verified |
+
+Four mutations, all killed.
+
+**In Chrome over HTTPS (HTTP/2)**, locally: the 4K HDR film copied held 20 to
+31 s ahead (Chrome's limit for one 40 Mb/s stream), and a 1080p transcode 31 s
+and rising, where Chrome alone kept 2.5 s; *Loading: by the player*; a jump
+back inside what was held was a seek, past it a new stream from 2:30. No Cast
+device is visible from the operator's laptop (the Presentation API reports none
+for the default receiver), so the Cast button stayed hidden and casting is
+untested against a device.
+
+---
+
 ## Decisions locked
 
 | # | Decision | ADR |
@@ -5605,6 +5644,7 @@ and leaving freed the conversion within 50 ms.
 | 70 | One Search with posters; Downloads live; Remove deletes the download's own files | [0070](docs/adr/0070-one-search-live-downloads-remove-deletes.md) |
 | 71 | Transcode when the pictures are the problem, with HDR tone-mapped and seeking by restart; adding a title searches for it; Downloads split into downloading and finished | [0071](docs/adr/0071-transcoding-and-grab-on-add.md) |
 | 72 | A full-window player; the original picture copied for a browser that decodes HEVC; a cheaper transcode that the server works ahead on; stalls wait for a buffer and drop to 720p | [0072](docs/adr/0072-a-full-screen-player-and-cheaper-playback.md) |
+| 73 | The player loads a converted stream through Media Source; torrents keep finished pieces across a restart (no part files); casting through the browser's Remote Playback | [0073](docs/adr/0073-player-loading-torrent-resume-casting.md) |
 | 9 | Opaque server-side sessions, not JWTs | See the header comment in `internal/identity/session.go` — immediate revocation is a hard requirement, and a self-contained token cannot do it without the database lookup a JWT exists to avoid |
 
 ### Defaults taken in the absence of an answer — override any of these
