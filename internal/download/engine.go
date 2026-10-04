@@ -56,6 +56,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/anacrolix/torrent"
@@ -190,6 +191,7 @@ type Engine struct {
 	notes []string
 	// udpTrackers is false when the profile cannot carry UDP.
 	udpTrackers bool
+	conns       *connCounter
 
 	// addedAt records when THIS PROCESS added each transfer. The torrent
 	// library does not track it and has no reason to, but a Transfer with a
@@ -216,13 +218,51 @@ func (e *Engine) noteAdded(hash string) {
 // DialerNetwork reports "tcp", which is what the library uses to decide whether
 // this dialer applies to a given peer address.
 type guardedDialer struct {
-	dial egress.Dialer
+	dial  egress.Dialer
+	count *connCounter
 }
 
 func (g guardedDialer) DialerNetwork() string { return "tcp" }
 
 func (g guardedDialer) Dial(ctx context.Context, addr string) (net.Conn, error) {
-	return g.dial.DialContext(ctx, "tcp", addr)
+	g.count.attempted.Add(1)
+	c, err := g.dial.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		g.count.fail(err)
+	}
+	return c, err
+}
+
+// ConnStats is the engine's outgoing peer connections since it started
+// (ADR-0066): the torrent library drops a failed one silently, so this is
+// where "why does nothing connect" is answered.
+type ConnStats struct {
+	Attempted   int64     `json:"attempted"`
+	Failed      int64     `json:"failed"`
+	LastError   string    `json:"last_error,omitempty"`
+	LastErrorAt time.Time `json:"last_error_at,omitzero"`
+}
+
+type connCounter struct {
+	attempted, failed atomic.Int64
+	mu                sync.Mutex
+	lastErr           string
+	lastAt            time.Time
+}
+
+func (c *connCounter) fail(err error) {
+	c.failed.Add(1)
+	c.mu.Lock()
+	c.lastErr, c.lastAt = err.Error(), time.Now().UTC()
+	c.mu.Unlock()
+}
+
+// Connections reports the outgoing peer connections attempted and failed.
+func (e *Engine) Connections() ConnStats {
+	e.conns.mu.Lock()
+	defer e.conns.mu.Unlock()
+	return ConnStats{Attempted: e.conns.attempted.Load(), Failed: e.conns.failed.Load(),
+		LastError: e.conns.lastErr, LastErrorAt: e.conns.lastAt}
 }
 
 // New starts the engine.
@@ -288,12 +328,14 @@ func New(cfg Config, guard *egress.Guard, notes []string) (*Engine, error) {
 
 	// Installed AFTER construction, which is the only place AddDialer exists.
 	// Because DialForPeerConns is false, cl.dialers was empty until now.
-	client.AddDialer(guardedDialer{dial: guard.For(ProfileName)})
+	conns := &connCounter{}
+	client.AddDialer(guardedDialer{dial: guard.For(ProfileName), count: conns})
 
 	return &Engine{
 		// UDP trackers only where UDP leaves the way TCP does: not under a
 		// proxy, which carries TCP alone, nor when the profile is blocked.
 		udpTrackers: guard.Profiles()[ProfileName].Mode == egress.ModeDirect,
+		conns:       conns,
 		client:      client, cfg: cfg, guard: guard, notes: notes,
 		addedAt: make(map[string]time.Time), now: time.Now,
 	}, nil

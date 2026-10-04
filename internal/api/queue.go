@@ -30,6 +30,8 @@ type DownloadEngine interface {
 	Remove(hash string) error
 	Notes() []string
 	Start(hash string) error
+	// Connections is the peer connections attempted and failed (ADR-0066).
+	Connections() download.ConnStats
 
 	// The grab path uses these two. Both take the metadata the engine cannot
 	// know — the release name the indexer published, which indexer it was, and
@@ -183,8 +185,9 @@ func (h *Handlers) Queue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items": items,
-		"notes": h.downloads.Notes(),
+		"items":       items,
+		"notes":       h.downloads.Notes(),
+		"connections": h.downloads.Connections(),
 	})
 }
 

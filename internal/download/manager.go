@@ -229,6 +229,9 @@ func (m *Manager) Remove(hash string) error {
 // Close shuts the engine down.
 func (m *Manager) Close() error { return m.engine.Close() }
 
+// Connections reports the engine's outgoing peer connections (ADR-0066).
+func (m *Manager) Connections() ConnStats { return m.engine.Connections() }
+
 // ListenPort reports the engine's port.
 func (m *Manager) ListenPort() int { return m.engine.ListenPort() }
 

@@ -52,7 +52,8 @@ acquisition for a settled season it wants all of, and imported file by file.
 Phase 6 stops at 6n (2026-10-03): the owner deferred audiobooks and anime's
 absolute numbering, to be added if they are needed.
 Phase 7 is the Proxmox deployment: 7a sets a SOCKS5 proxy from the web and adds
-Getting started; the install scripts and releases follow.
+Getting started, with the install scripts and v0.1.0; 7b (v0.1.1) fixes what the
+first real instance showed.
 **Scope change, 2026-09-26:** the operator is starting a new library rather than
 migrating one. Migrating from Sonarr is dropped; the Radarr importer (4g) stays,
 and does nothing unless a Radarr database is placed in its directory
@@ -65,7 +66,7 @@ and does nothing unless a Radarr database is placed in its directory
 | | |
 |---|---|
 | Go packages | 37 |
-| Tests | 1457, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Tests | 1461, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached (run again at 6l, after 6h made `golang.org/x/net/html` reached code). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
 | Routes registered | 151 (15 anonymous, 51 admin-hidden, 19 session-only). **0 of 151 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
@@ -5236,6 +5237,42 @@ Screenshots: `Claude outputs/7a-*.png`.
 
 ---
 
+### Increment 7b (v0.1.1) — found on the first real instance ✅
+
+The operator's first test download on Proxmox showed three things.
+[ADR-0066](docs/adr/0066-a-deleted-title-and-its-downloads.md) was written first.
+
+| What | How |
+|---|---|
+| **The Queue's notes were unreadable** — the dark theme's light text on a light box | `.note` and three status badges fell back to colours chosen for the light theme, because their tokens were never defined. Every token is now defined in both themes; a script found no undefined one left in either stylesheet |
+| **A season grabbed for a deleted series said it was for a film** | The series was deleted, its download stayed, and the next title added reused its id. `media_item` is rebuilt with `AUTOINCREMENT` (migration 0037), so an id is never used twice; and deleting a title stops every download aimed at it — a stopped download is never imported |
+| **A download knew 27 peers and connected to none, and nothing said why** | The engine counts the peer connections it attempts, how many failed, and the last failure's words; the Queue shows them under the engine's notes |
+
+#### Verified
+
+| Claim | How it is established |
+|---|---|
+| A title's id is never used again, and every column and reference survives the rebuild | `db.TestATitlesIDIsNeverUsedAgain` — mutation-verified |
+| Deleting a title stops the downloads aimed at it and no others, and says how many | `api.TestDeletingATitleStopsTheDownloadsAimedAtIt` — mutation-verified |
+| Attempts, failures and the last failure are counted; a connection that worked is not a failure | `download.TestPeerConnectionAttemptsAndFailuresAreCounted` — mutation-verified |
+| The Queue carries them | `api.TestTheQueueSaysWhyPeersAreNotConnecting` — mutation-verified |
+
+Eleven mutations, all killed.
+
+**On the running binary**, downloads through a relaying SOCKS5 stand-in and a
+tracker that hands out two peers on closed ports: the Queue read *Peer
+connections: 2 tried, 2 failed — last failure: egress: socks5 proxy refused:
+connection refused*, its notes readable on the dark theme; deleting the series
+answered `downloads_stopped: 1` and its download showed stopped; and the next
+title added after deleting id 1 was given id 2. Screenshot:
+`Claude outputs/v011-queue.png`.
+
+**Not changed:** the operator's existing mislabelled download was stopped
+before this release and stays listed as stopped — stopped transfers are the
+Queue's history and automatic acquisition's blocklist. It is never imported.
+
+---
+
 ## Decisions locked
 
 | # | Decision | ADR |
@@ -5305,6 +5342,7 @@ Screenshots: `Claude outputs/7a-*.png`.
 | 63 | A series' *season folders* switch, on by default, for what is imported from now on; nothing is moved | [0063](docs/adr/0063-season-folders.md) |
 | 64 | A release dated the day an episode aired is that episode, wherever it is matched or filed; a daily series is searched by date | [0064](docs/adr/0064-daily-series.md) |
 | 65 | One SOCKS5 proxy can be set from the web, with the password, a fresh code, an audit line, Discord and a restart; the rest of egress stays in the file | [0065](docs/adr/0065-socks5-from-the-web.md) |
+| 66 | A title's id is never used again; deleting a title stops its downloads; the Queue says why peers do not connect | [0066](docs/adr/0066-a-deleted-title-and-its-downloads.md) |
 | 9 | Opaque server-side sessions, not JWTs | See the header comment in `internal/identity/session.go` — immediate revocation is a hard requirement, and a self-contained token cannot do it without the database lookup a JWT exists to avoid |
 
 ### Defaults taken in the absence of an answer — override any of these

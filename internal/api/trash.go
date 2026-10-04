@@ -140,8 +140,9 @@ func (h *Handlers) DeleteMedia(w http.ResponseWriter, r *http.Request) {
 	h.auditDelete(r, res)
 
 	body := map[string]any{
-		"deleted": res.Item.Title,
-		"trashed": len(res.Trashed),
+		"deleted":           res.Item.Title,
+		"trashed":           len(res.Trashed),
+		"downloads_stopped": h.stopDownloadsFor(r, id),
 		"note": "The files were moved to this root folder's trash and are still " +
 			"recoverable until they are purged. Nothing was unlinked.",
 	}
@@ -235,6 +236,29 @@ func (h *Handlers) RestoreFromTrash(w http.ResponseWriter, r *http.Request) {
 		"note": "The file is back in the library. It will appear once the next " +
 			"scan records it, or you can scan its root folder now.",
 	})
+}
+
+// stopDownloadsFor stops every queued transfer aimed at a deleted title
+// (ADR-0066): a stopped transfer is never imported, so nothing it grabbed can
+// be filed against whatever title comes next. Its files stay where they are.
+func (h *Handlers) stopDownloadsFor(r *http.Request, itemID int64) int {
+	if h.downloads == nil {
+		return 0
+	}
+	records, err := h.downloads.Records(r.Context())
+	if err != nil {
+		return 0
+	}
+	stopped := 0
+	for _, rec := range records {
+		if rec.Target == nil || rec.Target.ItemID != itemID {
+			continue
+		}
+		if err := h.downloads.Remove(rec.InfoHash); err == nil {
+			stopped++
+		}
+	}
+	return stopped
 }
 
 func (h *Handlers) auditDelete(r *http.Request, res importer.DeleteResult) {

@@ -3942,6 +3942,14 @@
       (res.body.notes || []).forEach(function (n) {
         notes.appendChild(el('div', 'note', n));
       });
+      /* Why a download sits at zero (ADR-0066): the library drops a failed
+       * peer connection silently, so the engine's count is the only witness. */
+      var c = res.body.connections;
+      if (c && c.attempted > 0) {
+        notes.appendChild(el('div', 'note' + (c.failed === c.attempted ? ' bad' : ''),
+          'Peer connections: ' + c.attempted + ' tried, ' + c.failed + ' failed' +
+          (c.last_error ? ' — last failure: ' + c.last_error + (c.last_error_at ? ' (' + when(c.last_error_at) + ')' : '') : '')));
+      }
 
       var items = res.body.items || [];
       if (!items.length) { return empty(list, 'Nothing is downloading.'); }

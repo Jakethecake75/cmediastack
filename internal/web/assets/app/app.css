@@ -18,6 +18,11 @@
   --danger: #ff6b6b;
   --ok: #5bd68a;
   --warn: #ffc857;
+  /* Tints behind a status badge, and warning text: each theme's own, so no
+   * rule falls back to a colour picked for the other one. */
+  --ok-bg: rgba(91, 214, 138, 0.18);
+  --err-bg: rgba(255, 107, 107, 0.18);
+  --warn-text: #ffc857;
   --radius: 10px;
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -32,6 +37,9 @@
     --text: #1b2027;
     --muted: #5b6673;
     --accent: #1a5fd0;
+    --ok-bg: #dff0e4;
+    --err-bg: #f6dede;
+    --warn-text: #8a5d12;
   }
 }
 
@@ -394,9 +402,14 @@ a:focus-visible {
   padding: 0.5rem 0.7rem;
   margin-bottom: 0.5rem;
   border-radius: 4px;
-  background: var(--note-bg, #f3f0e6);
+  /* The theme's own surface: a fixed light colour here put the dark theme's
+   * light text on a light box, unreadable (found on the first real instance). */
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--text);
   font-size: 0.86rem;
 }
+.note.bad { border-color: var(--danger); }
 
 .small { font-size: 0.8rem; }
 .muted { opacity: 0.65; }
@@ -442,7 +455,7 @@ progress {
 .audit-more .fact-value { overflow-wrap: anywhere; }
 
 .badge.imported { background: var(--ok-bg, #dff0e4); }
-.badge.skipped  { background: var(--note-bg, #f3f0e6); }
+.badge.skipped  { background: var(--surface-2); color: var(--muted); }
 .badge.failed   { background: var(--err-bg, #f6dede); }
 
 @media (max-width: 640px) {

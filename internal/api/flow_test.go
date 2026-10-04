@@ -112,7 +112,10 @@ type fakeEngine struct {
 	recordsErr error
 	removeErr  error
 	addErr     error
+	conns      download.ConnStats
 }
+
+func (f *fakeEngine) Connections() download.ConnStats { return f.conns }
 
 func (f *fakeEngine) List() []download.Transfer {
 	f.mu.Lock()

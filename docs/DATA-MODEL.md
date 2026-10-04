@@ -4,7 +4,7 @@
 Run `go generate ./internal/docs/` after adding a migration;
 `docs.TestTheGeneratedDocumentsAreCurrent` fails while this file is stale.
 
-36 migrations applied ([1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36]). SQLite with `foreign_keys=ON` and WAL (ADR-0004) — the declared references below are enforced, not decorative.
+37 migrations applied ([1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37]). SQLite with `foreign_keys=ON` and WAL (ADR-0004) — the declared references below are enforced, not decorative.
 
 ## `account_request`
 

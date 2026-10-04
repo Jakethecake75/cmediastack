@@ -171,3 +171,44 @@ func TestABlockedProfileTurnsUDPOff(t *testing.T) {
 		}
 	}
 }
+
+// ADR-0066, decision 3: the engine counts the peer connections it attempts
+// and how many failed, with the last failure's words — the torrent library
+// drops a failed connection silently, so this is the only place it is said.
+func TestPeerConnectionAttemptsAndFailuresAreCounted(t *testing.T) {
+	seedDir := t.TempDir()
+	torrentFile, hash := makeTorrent(t, seedDir, "payload.bin", 64*1024)
+	seeder := newEngine(t, testGuard(t, true), Config{DataDir: seedDir, Seed: true, AcceptIncoming: true})
+	seed(t, seeder, torrentFile, hash)
+
+	shut := newEngine(t, testGuard(t, false), Config{DataDir: t.TempDir()}) // the gate is shut
+	if _, err := shut.AddTorrentBytes(torrentFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := shut.AddPeer(hash, "127.0.0.1", seeder.ListenPort()); err != nil {
+		t.Fatal(err)
+	}
+	_ = shut.Start(hash)
+	if !within(5*time.Second, func() bool { return shut.Connections().Failed > 0 }) {
+		t.Fatalf("a refused connection was not counted: %+v", shut.Connections())
+	}
+	c := shut.Connections()
+	if c.Attempted < c.Failed || !strings.Contains(c.LastError, "egress") || c.LastErrorAt.IsZero() {
+		t.Errorf("connections %+v, want attempts ≥ failures and the guard's refusal as the last error", c)
+	}
+
+	open := newEngine(t, testGuard(t, true), Config{DataDir: t.TempDir()})
+	if _, err := open.AddTorrentBytes(torrentFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := open.AddPeer(hash, "127.0.0.1", seeder.ListenPort()); err != nil {
+		t.Fatal(err)
+	}
+	_ = open.Start(hash)
+	if !within(5*time.Second, func() bool { return open.Connections().Attempted > 0 }) {
+		t.Fatal("a connection that worked was not counted as attempted")
+	}
+	if c := open.Connections(); c.Failed != 0 || c.LastError != "" {
+		t.Errorf("a connection that worked was counted as failed: %+v", c)
+	}
+}
