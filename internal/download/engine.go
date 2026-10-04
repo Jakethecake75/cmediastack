@@ -594,21 +594,23 @@ func (e *Engine) AddTorrentBytes(data []byte) (Transfer, error) {
 	return e.transferOf(t), nil
 }
 
-// Start begins downloading a transfer whose metadata has arrived.
+// Start begins downloading a transfer, now or, for a magnet whose metadata
+// has not arrived, the moment it does. Until then the library wants no
+// pieces, and once the metadata is in it stops dialling peers altogether: a
+// magnet left at 0% with every peer waiting (found live, v0.2.0).
 func (e *Engine) Start(hash string) error {
 	t, err := e.lookup(hash)
 	if err != nil {
 		return err
 	}
-	select {
-	case <-t.GotInfo():
-		t.DownloadAll()
-		return nil
-	default:
-		// Metadata has not arrived. Downloading cannot start, and saying so
-		// beats appearing to succeed.
-		return fmt.Errorf("download: metadata for %s has not arrived yet", hash)
-	}
+	go func() {
+		select {
+		case <-t.GotInfo():
+			t.DownloadAll()
+		case <-t.Closed():
+		}
+	}()
+	return nil
 }
 
 // List returns every transfer.

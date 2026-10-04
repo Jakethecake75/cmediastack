@@ -53,7 +53,7 @@ Phase 6 stops at 6n (2026-10-03): the owner deferred audiobooks and anime's
 absolute numbering, to be added if they are needed.
 Phase 7 is the Proxmox deployment: 7a sets a SOCKS5 proxy from the web and adds
 Getting started, with the install scripts and v0.1.0; 7b (v0.1.1) fixes what the
-first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, and 7e (v0.2.0) gathers the app into Home, Request and Settings.
+first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, and 7f (v0.2.1) starts a magnet download once its metadata arrives.
 **Scope change, 2026-09-26:** the operator is starting a new library rather than
 migrating one. Migrating from Sonarr is dropped; the Radarr importer (4g) stays,
 and does nothing unless a Radarr database is placed in its directory
@@ -66,7 +66,7 @@ and does nothing unless a Radarr database is placed in its directory
 | | |
 |---|---|
 | Go packages | 38 |
-| Tests | 1480, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Tests | 1481, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached (run again at 6l, after 6h made `golang.org/x/net/html` reached code). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
 | Routes registered | 153 (15 anonymous, 51 admin-hidden, 19 session-only). **0 of 153 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
@@ -5372,6 +5372,22 @@ left*), Recently added, Movies and TV Shows; Request's tabs Search, Discover,
 Requests, Downloads, Wanted and Indexer search; Settings' tabs grouped under
 Setup, Library, People, Your account and System; and `#overview` opened Home.
 Screenshots: `Claude outputs/v020-*.png`.
+
+---
+
+### Increment 7f (v0.2.1) — a magnet download starts when its metadata arrives ✅
+
+Found live: a film grabbed from a magnet sat at 0% with 288 peers waiting and
+none being dialled. `Start` ran straight after the magnet was added, before
+its metadata, and refused; every caller (a person's grab, automatic
+acquisition, the restore at boot) ignored that, so nothing asked for a piece.
+Once the metadata arrived the library wanted no data and stopped dialling.
+`Start` now asks for every piece the moment the metadata arrives. Downloads
+added from a `.torrent` file were never affected.
+
+| Claim | How it is established |
+|---|---|
+| A magnet started before its metadata downloads to the end | `download.TestAMagnetStartedBeforeItsMetadataStillDownloads` — fails on the old `Start` with metadata in and 0 of 262,144 bytes after 20 s |
 
 ---
 
