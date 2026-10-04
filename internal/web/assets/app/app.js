@@ -3976,8 +3976,14 @@
         r.appendChild(facts([
           ['Status', t.status],
           ['Done', t.have_metadata ? bytes(t.completed) + ' of ' + bytes(t.bytes) : undefined],
-          ['Peers', t.peers],
-          ['Seeders', t.seeders],
+          /* How it is doing (ADR-0068): a download at zero says whether it has
+           * no peers, peers that will not connect, or connections that send
+           * nothing. */
+          ['Peers', t.status === 'downloading' || t.status === 'seeding' || t.status === 'unrecorded'
+            ? t.connected + ' connected (' + t.seeders + ' seeding) · ' + t.connecting + ' connecting · ' +
+              t.waiting + ' waiting' : t.peers],
+          ['Received', t.received ? bytes(t.received) : undefined],
+          ['Speed', t.status === 'downloading' ? (t.rate ? bytes(t.rate) + '/s' : 'nothing arriving') : undefined],
           /* No person pressed Grab for an automatic one (ADR-0030); said in
            * words, not as the task's name. */
           ['Added by', t.automatic ? 'automatic acquisition' : t.added_by],

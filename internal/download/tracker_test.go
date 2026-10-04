@@ -314,3 +314,172 @@ func TestAProxyThatRefusesUDPLeavesUDPTrackersOff(t *testing.T) {
 		t.Errorf("the notes do not say the proxy refused UDP: %v", e.Notes())
 	}
 }
+
+// Found on the operator's instance: through NordVPN's proxy the engine
+// connected to seeders and received nothing. A seeder and a downloader in one
+// process, the downloader going through a SOCKS5 proxy: the data must flow.
+func TestAPeerThroughAProxySendsData(t *testing.T) {
+	seedDir := t.TempDir()
+	torrentFile, hash := makeTorrent(t, seedDir, "payload.bin", 256*1024)
+	seeder := newEngine(t, testGuard(t, true), Config{DataDir: seedDir, Seed: true, AcceptIncoming: true})
+	seed(t, seeder, torrentFile, hash)
+
+	srv := socks5test.Start(t)
+	srv.RefuseUDP = true
+	guard := egress.New(egress.Config{Profiles: map[string]egress.Profile{
+		ProfileName: {Mode: egress.ModeSOCKS5, Address: srv.Addr, Username: "u", Password: "p", RemoteDNS: true}}})
+	guard.SetHealthy(true, "test")
+	cfg, notes := ConfigFor(t.TempDir(), 0, guard.Profiles()[ProfileName], false, false)
+	leecher, err := New(cfg, guard, notes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = leecher.Close() })
+	if _, err := leecher.AddTorrentBytes(torrentFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := leecher.AddPeer(hash, "127.0.0.1", seeder.ListenPort()); err != nil {
+		t.Fatal(err)
+	}
+	_ = leecher.Start(hash)
+	if !within(30*time.Second, func() bool { l := leecher.List(); return len(l) == 1 && l[0].Done }) {
+		t.Fatalf("through the proxy the download did not finish: %+v, connections %+v, proxy relayed %v",
+			leecher.List(), leecher.Connections(), srv.Connects)
+	}
+}
+
+// Behind a proxy that refuses UDP (NordVPN's), each udp:// tracker is also
+// asked over HTTP at the same host and port — the big open trackers answer
+// both, and it is how the operator's qBittorrent finds its peers. Through the
+// proxy, by name.
+func TestUDPTrackersAreAlsoAskedOverHTTPWhenTheProxyRefusesUDP(t *testing.T) {
+	var hits atomic.Int32
+	var path atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path.Store(r.URL.Path)
+		hits.Add(1)
+		_, _ = w.Write([]byte("d8:intervali1800e5:peers0:e"))
+	}))
+	t.Cleanup(srv.Close)
+	_, port, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	proxy := socks5test.Start(t)
+	proxy.RefuseUDP = true
+	guard := egress.New(egress.Config{Profiles: map[string]egress.Profile{
+		ProfileName: {Mode: egress.ModeSOCKS5, Address: proxy.Addr, Username: "u", Password: "p", RemoteDNS: true}}})
+	guard.SetHealthy(true, "test")
+	e := newEngine(t, guard, Config{DataDir: t.TempDir()})
+	data, hash := trackedTorrent(t, "udp://localhost:"+port+"/announce")
+	if _, err := e.AddTorrentBytes(data); err != nil {
+		t.Fatal(err)
+	}
+	_ = e.Start(hash)
+	if !within(10*time.Second, func() bool { return hits.Load() > 0 }) {
+		t.Fatalf("the udp:// tracker was not asked over HTTP; the proxy relayed %v", proxy.Connects)
+	}
+	if len(proxy.Connects) == 0 || proxy.Connects[0] != "localhost:"+port {
+		t.Errorf("the HTTP announce went %v, want through the proxy to the name localhost:%s", proxy.Connects, port)
+	}
+	if p, _ := path.Load().(string); p != "/announce" {
+		t.Errorf("announced to %q, want /announce", p)
+	}
+}
+
+// Direct, UDP trackers are used as they are, and no HTTP form is added.
+func TestNoHTTPFormIsAddedWhenUDPWorks(t *testing.T) {
+	srv, hits := announces(t)
+	_, port, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	e := newEngine(t, testGuard(t, true), Config{DataDir: t.TempDir()})
+	data, hash := trackedTorrent(t, "udp://127.0.0.1:"+port+"/announce")
+	if _, err := e.AddTorrentBytes(data); err != nil {
+		t.Fatal(err)
+	}
+	_ = e.Start(hash)
+	if within(3*time.Second, func() bool { return hits.Load() > 0 }) {
+		t.Error("an HTTP announce was added although UDP works")
+	}
+}
+
+// A transfer says how it is doing (ADR-0068): the peers connected,
+// connecting and waiting, the bytes received, and a rate between two looks.
+func TestATransferSaysHowItIsDoing(t *testing.T) {
+	seedDir := t.TempDir()
+	torrentFile, hash := makeTorrent(t, seedDir, "payload.bin", 256*1024)
+	seeder := newEngine(t, testGuard(t, true), Config{DataDir: seedDir, Seed: true, AcceptIncoming: true})
+	seed(t, seeder, torrentFile, hash)
+	leecher := newEngine(t, testGuard(t, true), Config{DataDir: t.TempDir()})
+	if _, err := leecher.AddTorrentBytes(torrentFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := leecher.AddPeer(hash, "127.0.0.1", seeder.ListenPort()); err != nil {
+		t.Fatal(err)
+	}
+	_ = leecher.Start(hash)
+	if !within(30*time.Second, func() bool { l := leecher.List(); return len(l) == 1 && l[0].Done }) {
+		t.Fatal("the download did not finish")
+	}
+	tr := leecher.List()[0]
+	if tr.Received < 256*1024 {
+		t.Errorf("transfer %+v: want ≥ 256 KiB received", tr)
+	}
+	// Once finished the seeder is let go, so its connection may be gone or
+	// going; what must hold is that the three states are the peers it knows.
+	if tr.Connected+tr.Connecting+tr.Waiting != tr.Peers {
+		t.Errorf("transfer %+v: connected+connecting+waiting ≠ peers", tr)
+	}
+}
+
+func TestARateIsBytesOverTheTimeBetweenTwoLooks(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	for _, tc := range []struct {
+		prev, now sample
+		want      int64
+	}{
+		{sample{t0, 0}, sample{t0.Add(2 * time.Second), 4096}, 2048},
+		{sample{t0, 4096}, sample{t0.Add(time.Second), 4096}, 0},
+		{sample{}, sample{t0, 9999}, 0},                                // no earlier look
+		{sample{t0, 5000}, sample{t0.Add(time.Second), 1000}, 0},       // a restart's lower count
+		{sample{t0, 0}, sample{t0.Add(100 * time.Millisecond), 1}, -1}, // too soon: keep the last rate
+	} {
+		if got := rateBetween(tc.prev, tc.now); got != tc.want {
+			t.Errorf("rateBetween(%v, %v) = %d, want %d", tc.prev, tc.now, got, tc.want)
+		}
+	}
+}
+
+// Peers beyond those being connected to wait their turn, and are counted as
+// waiting: thirty peers that accept a connection and never answer, more than
+// the engine connects to at once.
+func TestWaitingPeersAreCounted(t *testing.T) {
+	torrentFile, hash := makeTorrent(t, "", "payload.bin", 64*1024)
+	e := newEngine(t, testGuard(t, true), Config{DataDir: t.TempDir()})
+	if _, err := e.AddTorrentBytes(torrentFile); err != nil {
+		t.Fatal(err)
+	}
+	for range 30 {
+		ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = ln.Close() })
+		go func() {
+			for {
+				c, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				t.Cleanup(func() { _ = c.Close() }) // held open, never answered
+			}
+		}()
+		port := ln.Addr().(*net.TCPAddr).Port
+		if err := e.AddPeer(hash, "127.0.0.1", port); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = e.Start(hash)
+	if !within(5*time.Second, func() bool { l := e.List(); return len(l) == 1 && l[0].Waiting > 0 && l[0].Connecting > 0 }) {
+		t.Fatalf("no peer counted as waiting and connecting: %+v", e.List())
+	}
+	if l := e.List()[0]; l.Connected+l.Connecting+l.Waiting != l.Peers {
+		t.Errorf("transfer %+v: connected+connecting+waiting ≠ peers", l)
+	}
+}

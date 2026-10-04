@@ -61,6 +61,12 @@ type queueItem struct {
 	Peers     int     `json:"peers"`
 	Seeders   int     `json:"seeders"`
 	Done      bool    `json:"done"`
+	// How it is doing (ADR-0068).
+	Connected  int   `json:"connected"`
+	Connecting int   `json:"connecting"`
+	Waiting    int   `json:"waiting"`
+	Received   int64 `json:"received"`
+	Rate       int64 `json:"rate"`
 	// HaveMetadata is false while a magnet is still resolving. Until it flips,
 	// Bytes and Name are unknown rather than zero and empty, and a UI that does
 	// not distinguish the two shows a 0%-of-0-bytes download that looks broken.
@@ -146,6 +152,8 @@ func (h *Handlers) Queue(w http.ResponseWriter, r *http.Request) {
 			InfoHash: t.InfoHash, Name: t.Name,
 			Bytes: t.Bytes, Completed: t.Completed, Percent: t.Percent(),
 			Peers: t.Peers, Seeders: t.Seeders, Done: t.Done,
+			Connected: t.Connected, Connecting: t.Connecting, Waiting: t.Waiting,
+			Received: t.Received, Rate: t.Rate,
 			HaveMetadata: t.MetadataGot,
 			Title:        t.Name,
 			Status:       "unrecorded",

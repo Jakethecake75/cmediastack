@@ -50,3 +50,23 @@ func TestTheQueueSaysWhyPeersAreNotConnecting(t *testing.T) {
 		t.Errorf("connections = %v: %s", c, res.Raw)
 	}
 }
+
+// ADR-0068: each download says how it is doing.
+func TestTheQueueSaysHowEachDownloadIsDoing(t *testing.T) {
+	r := newRig(t)
+	admin := r.bootstrapAdmin()
+	h := hashFor("going")
+	r.downloads.items = []download.Transfer{{InfoHash: h, Name: "x", Peers: 30, Seeders: 2,
+		Connected: 7, Connecting: 3, Waiting: 20, Received: 1 << 20, Rate: 4096}}
+	res := admin.get("/api/v1/queue")
+	items, _ := res.Body["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("queue %s", res.Raw)
+	}
+	it := items[0].(map[string]any)
+	for k, want := range map[string]float64{"connected": 7, "connecting": 3, "waiting": 20, "received": 1 << 20, "rate": 4096} {
+		if it[k] != want {
+			t.Errorf("%s = %v, want %v", k, it[k], want)
+		}
+	}
+}

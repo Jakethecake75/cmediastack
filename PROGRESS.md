@@ -53,7 +53,7 @@ Phase 6 stops at 6n (2026-10-03): the owner deferred audiobooks and anime's
 absolute numbering, to be added if they are needed.
 Phase 7 is the Proxmox deployment: 7a sets a SOCKS5 proxy from the web and adds
 Getting started, with the install scripts and v0.1.0; 7b (v0.1.1) fixes what the
-first real instance showed, and 7c (v0.1.2) sends UDP trackers through the proxy.
+first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, and 7d (v0.1.3) asks them over HTTP behind one that does not.
 **Scope change, 2026-09-26:** the operator is starting a new library rather than
 migrating one. Migrating from Sonarr is dropped; the Radarr importer (4g) stays,
 and does nothing unless a Radarr database is placed in its directory
@@ -66,7 +66,7 @@ and does nothing unless a Radarr database is placed in its directory
 | | |
 |---|---|
 | Go packages | 38 |
-| Tests | 1468, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Tests | 1475, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached (run again at 6l, after 6h made `golang.org/x/net/html` reached code). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
 | Routes registered | 151 (15 anonymous, 51 admin-hidden, 19 session-only). **0 of 151 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
@@ -5306,6 +5306,42 @@ the proxy.
 
 ---
 
+### Increment 7d (v0.1.3) — peers behind a proxy without UDP ✅
+
+v0.1.2 asked NordVPN's proxy for UDP and it refused (*connect reply: EOF*).
+The operator's qBittorrent was then read, read-only, through its Web UI: on
+the same proxy every `udp://` tracker says "Permission denied" and DHT has 0
+nodes — NordVPN does not relay UDP — and it downloads from one tracker,
+`http://tracker.opentrackr.org:1337/announce`, about 140 peers.
+[ADR-0068](docs/adr/0068-peers-behind-a-proxy-without-udp.md) was written first.
+
+| What | How |
+|---|---|
+| **UDP trackers asked over HTTP** | Behind a proxy that refuses UDP, each `udp://host:port` tracker is also asked as `http://host:port/announce`, through the proxy, by name — the form the big open trackers answer, and the one qBittorrent's peers came from. Where UDP works nothing is added |
+| **The data path through a proxy is sound** | A seeder and a downloader in one process, the downloader through a SOCKS5 proxy, finish in a tenth of a second (`download.TestAPeerThroughAProxySendsData`): the stalled download was short of peers, not broken |
+| **The Queue says how each download is doing** | Peers connected (and seeding), connecting and waiting; bytes received; speed between the last two looks, or *nothing arriving* |
+
+#### Verified
+
+| Claim | How it is established |
+|---|---|
+| Behind a proxy refusing UDP a `udp://` tracker is asked at `/announce` over HTTP, through the proxy, by name; where UDP works nothing is added | `download.TestUDPTrackersAreAlsoAskedOverHTTPWhenTheProxyRefusesUDP`, `TestNoHTTPFormIsAddedWhenUDPWorks` — mutation-verified |
+| A download through a SOCKS5 proxy completes | `download.TestAPeerThroughAProxySendsData` |
+| Received bytes and the three peer states are reported and add up to the peers known; waiting peers are counted; the rate is bytes over the time between two looks | `download.TestATransferSaysHowItIsDoing`, `TestWaitingPeersAreCounted`, `TestARateIsBytesOverTheTimeBetweenTwoLooks`, `api.TestTheQueueSaysHowEachDownloadIsDoing` — mutation-verified |
+
+Nine mutations: seven killed after two needed sharper tests (the announce
+path, and peers that wait), one equivalent (the HTTP forms switch, which only
+matters under a blocked profile that sends nothing) and one equivalent guard
+deleted (a rate with no earlier look, which rounds to 0 anyway).
+
+**On the running binary**, through a SOCKS5 stand-in that closes UDP
+ASSOCIATE as NordVPN does: the Queue's notes read *UDP trackers cannot be used:
+the proxy refused UDP (egress: socks5 connect reply: EOF). Each is asked over
+HTTP at the same address instead*, the stand-in relayed the HTTP announce to
+`localhost:6970`, and the peers it gave were tried through the proxy.
+
+---
+
 ## Decisions locked
 
 | # | Decision | ADR |
@@ -5377,6 +5413,7 @@ the proxy.
 | 65 | One SOCKS5 proxy can be set from the web, with the password, a fresh code, an audit line, Discord and a restart; the rest of egress stays in the file | [0065](docs/adr/0065-socks5-from-the-web.md) |
 | 66 | A title's id is never used again; deleting a title stops its downloads; the Queue says why peers do not connect | [0066](docs/adr/0066-a-deleted-title-and-its-downloads.md) |
 | 67 | UDP trackers go through the SOCKS5 proxy's UDP association, their names resolved by the proxy; DHT and uTP stay off | [0067](docs/adr/0067-udp-trackers-through-the-proxy.md) |
+| 68 | Behind a proxy that refuses UDP, each UDP tracker is also asked over HTTP; the Queue says how each download is doing | [0068](docs/adr/0068-peers-behind-a-proxy-without-udp.md) |
 | 9 | Opaque server-side sessions, not JWTs | See the header comment in `internal/identity/session.go` — immediate revocation is a hard requirement, and a self-contained token cannot do it without the database lookup a JWT exists to avoid |
 
 ### Defaults taken in the absence of an answer — override any of these

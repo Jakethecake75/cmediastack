@@ -182,7 +182,8 @@ egress:
   #
   # Note: NordVPN offers no port forwarding, so you are a passive peer either
   # way. Under socks5, udp:// trackers go through the proxy's UDP association
-  # when it offers one — NordVPN's does (ADR-0067) — but DHT and uTP stay off.
+  # when it offers one; NordVPN's does not, so each is asked over HTTP at the
+  # same address instead (ADR-0067, ADR-0068). DHT and uTP stay off.
   # The WireGuard namespace above keeps all three. See
   # docs/adr/0001-egress-control-wireguard-netns.md.
 

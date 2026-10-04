@@ -56,6 +56,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -188,15 +189,21 @@ type Engine struct {
 	client *torrent.Client
 	closed bool
 
-	cfg   Config
-	guard *egress.Guard
-	notes []string
+	cfg    Config
+	guard  *egress.Guard
+	notes  []string
+	rateMu sync.Mutex
+	rates  map[string]rateState
+
 	// udpTrackers is false when the profile cannot carry UDP; proxiedUDP is
 	// true when it is carried by the proxy, whose names aliases stands in for.
 	udpTrackers bool
 	proxiedUDP  bool
 	aliases     *egress.Aliases
-	conns       *connCounter
+	// httpForms asks each udp:// tracker over HTTP at the same address when
+	// the proxy refuses UDP (NordVPN's does).
+	httpForms bool
+	conns     *connCounter
 
 	// addedAt records when THIS PROCESS added each transfer. The torrent
 	// library does not track it and has no reason to, but a Transfer with a
@@ -323,11 +330,12 @@ func New(cfg Config, guard *egress.Guard, notes []string) (*Engine, error) {
 	// than being refused: the library panics on a refused socket.
 	mode := guard.Profiles()[ProfileName].Mode
 	aliases := egress.NewAliases()
-	udpTrackers, proxiedUDP := mode == egress.ModeDirect, false
+	udpTrackers, proxiedUDP, httpForms := mode == egress.ModeDirect, false, false
 	if mode == egress.ModeSOCKS5 {
 		if pc, err := guard.ListenPacket(ProfileName, aliases); err != nil {
-			notes = append(notes, "UDP trackers are off: the proxy refused UDP ("+err.Error()+"), so only "+
-				"HTTP trackers find peers")
+			notes = append(notes, "UDP trackers cannot be used: the proxy refused UDP ("+err.Error()+"). Each "+
+				"is asked over HTTP at the same address instead, which the big open trackers answer")
+			httpForms = true
 		} else {
 			_ = pc.Close()
 			udpTrackers, proxiedUDP = true, true
@@ -365,6 +373,7 @@ func New(cfg Config, guard *egress.Guard, notes []string) (*Engine, error) {
 	return &Engine{
 		udpTrackers: udpTrackers,
 		proxiedUDP:  proxiedUDP,
+		httpForms:   httpForms,
 		aliases:     aliases,
 		conns:       conns,
 		client:      client, cfg: cfg, guard: guard, notes: notes,
@@ -413,6 +422,32 @@ type Transfer struct {
 	Uploaded    int64
 	AddedAt     time.Time
 	MetadataGot bool
+	// How it is doing (ADR-0068): peers connected, being connected to and
+	// known but not yet tried; payload bytes received in this process's
+	// lifetime; and bytes a second between the last two looks.
+	Connected, Connecting, Waiting int
+	Received, Rate                 int64
+}
+
+// sample is a transfer's received bytes at one look.
+type sample struct {
+	at    time.Time
+	bytes int64
+}
+
+// rateBetween is bytes a second between two looks: 0 when the count went down
+// (a restart) — and, with no earlier look, effectively 0, the zero time being
+// centuries ago — and -1 when the looks are under a second apart, meaning
+// "keep the rate you had".
+func rateBetween(prev, now sample) int64 {
+	dt := now.at.Sub(prev.at)
+	if dt < time.Second {
+		return -1
+	}
+	if now.bytes < prev.bytes {
+		return 0
+	}
+	return int64(float64(now.bytes-prev.bytes) / dt.Seconds())
 }
 
 // Ratio is uploaded over downloaded, the number a tracker cares about. A
@@ -474,6 +509,10 @@ func (e *Engine) withoutUDPTrackers(spec *torrent.TorrentSpec) *torrent.TorrentS
 				if aliased, ok := e.aliasTracker(u); ok {
 					kept = append(kept, aliased)
 				}
+			} else if e.httpForms {
+				if h, ok := httpForm(u); ok && !slices.Contains(kept, h) {
+					kept = append(kept, h)
+				}
 			}
 		}
 		if len(kept) > 0 {
@@ -482,6 +521,16 @@ func (e *Engine) withoutUDPTrackers(spec *torrent.TorrentSpec) *torrent.TorrentS
 	}
 	spec.Trackers = tiers
 	return spec
+}
+
+// httpForm is a udp:// tracker's address asked over HTTP: same host, same
+// port, the conventional /announce path.
+func httpForm(raw string) (string, bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Hostname() == "" || u.Port() == "" {
+		return "", false
+	}
+	return "http://" + u.Host + "/announce", true
 }
 
 // aliasTracker replaces a udp:// tracker's host name with its placeholder. An
@@ -624,6 +673,9 @@ func (e *Engine) transferOf(t *torrent.Torrent) Transfer {
 	// so counting them would overstate the ratio and stop seeding early — on a
 	// private tracker, that is how an account gets banned.
 	tr.Uploaded = stats.BytesWrittenData.Int64()
+	tr.Connected, tr.Connecting, tr.Waiting = stats.ActivePeers, stats.HalfOpenPeers, stats.PendingPeers
+	tr.Received = stats.BytesReadUsefulData.Int64()
+	tr.Rate = e.rate(tr.InfoHash, tr.Received)
 
 	select {
 	case <-t.GotInfo():
@@ -634,6 +686,30 @@ func (e *Engine) transferOf(t *torrent.Torrent) Transfer {
 	default:
 	}
 	return tr
+}
+
+// rate keeps one sample per transfer and returns its rate since the last.
+func (e *Engine) rate(hash string, received int64) int64 {
+	e.rateMu.Lock()
+	defer e.rateMu.Unlock()
+	if e.rates == nil {
+		e.rates = map[string]rateState{}
+	}
+	st := e.rates[hash]
+	now := sample{e.now(), received}
+	switch r := rateBetween(st.last, now); {
+	case r >= 0:
+		st.rate, st.last = r, now
+	case st.last.at.IsZero():
+		st.last = now
+	}
+	e.rates[hash] = st
+	return st.rate
+}
+
+type rateState struct {
+	last sample
+	rate int64
 }
 
 // DataPathFor returns where a transfer's files live. It is built from the

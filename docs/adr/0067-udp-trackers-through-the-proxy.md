@@ -1,6 +1,6 @@
 # ADR-0067: UDP trackers through the SOCKS5 proxy
 
-**Status:** accepted
+**Status:** accepted — its premise corrected by [ADR-0068](0068-peers-behind-a-proxy-without-udp.md): NordVPN's proxy does not relay UDP; the association is kept for proxies that do
 **Date:** 2026-10-04
 **Related:** [ADR-0001](0001-egress-control-wireguard-netns.md), [ADR-0013](0013-egress-guard-design.md), [ADR-0065](0065-socks5-from-the-web.md), [ADR-0066](0066-a-deleted-title-and-its-downloads.md)
 

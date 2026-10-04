@@ -23,6 +23,9 @@ type Server struct {
 	// listener; the destination port is replaced by the mapped one.
 	Names map[string]string
 
+	// Connects are the CONNECT destinations relayed.
+	Connects []string
+
 	mu   sync.Mutex
 	sent []Datagram
 }
@@ -98,18 +101,36 @@ func (s *Server) serve(c net.Conn) {
 	if err != nil {
 		return
 	}
+	var host string
 	switch req[3] {
 	case 1:
-		_, err = read(c, 4+2)
+		var a []byte
+		if a, err = read(c, 4); err == nil {
+			host = net.IP(a).String()
+		}
 	case 4:
-		_, err = read(c, 16+2)
+		var a []byte
+		if a, err = read(c, 16); err == nil {
+			host = net.IP(a).String()
+		}
 	case 3:
 		var n []byte
 		if n, err = read(c, 1); err == nil {
-			_, err = read(c, int(n[0])+2)
+			var a []byte
+			if a, err = read(c, int(n[0])); err == nil {
+				host = string(a)
+			}
 		}
 	}
 	if err != nil {
+		return
+	}
+	pb, err := read(c, 2)
+	if err != nil {
+		return
+	}
+	if req[1] == 1 { // CONNECT: relay TCP
+		s.connect(c, net.JoinHostPort(host, strconv.Itoa(int(binary.BigEndian.Uint16(pb)))))
 		return
 	}
 	if req[1] != 3 || s.RefuseUDP {
@@ -133,6 +154,25 @@ func (s *Server) serve(c net.Conn) {
 
 	go s.relay(relay)
 	_, _ = io.Copy(io.Discard, c) // the association lives as long as this connection
+}
+
+// connect relays a CONNECT to its destination, both ways, until either side
+// closes.
+func (s *Server) connect(c net.Conn, dest string) {
+	up, err := (&net.Dialer{}).DialContext(context.Background(), "tcp", dest)
+	if err != nil {
+		_, _ = c.Write([]byte{5, 5, 0, 1, 0, 0, 0, 0, 0, 0})
+		return
+	}
+	defer func() { _ = up.Close() }()
+	s.mu.Lock()
+	s.Connects = append(s.Connects, dest)
+	s.mu.Unlock()
+	_, _ = c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0})
+	done := make(chan struct{}, 2)
+	go func() { _, _ = io.Copy(up, c); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(c, up); done <- struct{}{} }()
+	<-done
 }
 
 // relay forwards the client's datagrams to their destinations and the answers

@@ -353,8 +353,8 @@ no browse-only library mode.
 ## The six things worth knowing
 
 1. **Egress control lives in the kernel, not the app.** NordVPN offers no port
-   forwarding, and over its SOCKS5 endpoints only TCP and UDP trackers travel
-   (ADR-0067) — no DHT or uTP. The download
+   forwarding, and its SOCKS5 endpoints carry TCP only: UDP trackers are asked
+   over HTTP instead (ADR-0068), and there is no DHT or uTP. The download
    engine runs in a network namespace behind a WireGuard tunnel with a
    default-deny firewall it has no capability to modify — if `internal/egress`
    were deleted, a direct connection would still be impossible, because there
