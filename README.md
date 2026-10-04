@@ -15,7 +15,7 @@ It asks for default or advanced settings, creates an unprivileged Debian 12
 container (2 cores, 2 GB, 64 GB — your media lives in it), installs the latest
 release, and prints the address to open: `https://<container-ip>:8443/setup`.
 Open it straight away — whoever does becomes the administrator — and sign in;
-**Getting started** then asks for TMDB, OpenSubtitles, a SOCKS5 proxy, the
+**Settings → Getting started** then asks for TMDB, OpenSubtitles, a SOCKS5 proxy, the
 libraries, an indexer and Discord. Run the same line inside the container to
 update it. [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §0 has the details; the Docker
 deployment is §1 onwards.

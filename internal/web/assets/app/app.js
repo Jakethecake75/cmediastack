@@ -19,49 +19,56 @@
 
   var me = null;
 
-  /* Views, in nav order. `perm` is the permission that reveals the tab; a view
-   * with no perm is available to every signed-in account. */
+  /* Three sections (ADR-0069), each with its own tabs. A view's `perm` is the
+   * permission that reveals it, `unless` a permission that hides it (the
+   * requester's Search gives way to the editor's), and `group` heads a run of
+   * Settings tabs. A view with no perm is available to every account. */
+  var SECTIONS = [
+    { key: 'home', label: 'Home' },
+    { key: 'request', label: 'Request' },
+    { key: 'settings', label: 'Settings' }
+  ];
   var VIEWS = [
-    { id: 'overview',  label: 'Overview' },
-    { id: 'library',   label: 'Library',   perm: 'media.browse' },
-    /* Adding a series before any of it is on disk (ADR-0025). */
-    { id: 'add',       label: 'Add',       perm: 'library.edit' },
-    { id: 'identify',  label: 'Identify',  perm: 'library.edit' },
-    { id: 'wanted',    label: 'Wanted',    perm: 'media.browse' },
-    /* Reached from a Play button in the library rather than from the nav —
-     * "Watch" with nothing chosen is an empty screen with no way forward. */
-    { id: 'watch',     label: 'Watch',     perm: 'media.browse', hidden: true },
-    { id: 'search',    label: 'Search',    perm: 'acquisition.search' },
-    { id: 'queue',     label: 'Queue',     perm: 'acquisition.queue' },
+    { id: 'home',      label: 'Home',      section: 'home', perm: 'media.browse' },
+    { id: 'library',   label: 'Library',   section: 'home', perm: 'media.browse' },
+    /* Reached from a Play button rather than from the nav — "Watch" with
+     * nothing chosen is an empty screen with no way forward. */
+    { id: 'watch',     label: 'Watch',     section: 'home', perm: 'media.browse', hidden: true },
+
+    /* One place to find, add or ask for a title (ADR-0069). */
+    { id: 'add',       label: 'Search',    section: 'request', perm: 'library.edit' },
+    { id: 'ask',       label: 'Search',    section: 'request', perm: 'request.submit', unless: 'library.edit' },
     /* What is popular, and a request beside each (ADR-0043). */
-    { id: 'discover',  label: 'Discover',  perm: 'media.browse' },
-    { id: 'requests',  label: 'Requests',  perm: 'request.submit' },
+    { id: 'discover',  label: 'Discover',  section: 'request', perm: 'media.browse' },
+    { id: 'requests',  label: 'Requests',  section: 'request', perm: 'request.submit' },
+    { id: 'queue',     label: 'Downloads', section: 'request', perm: 'acquisition.queue' },
+    { id: 'wanted',    label: 'Wanted',    section: 'request', perm: 'media.browse' },
+    { id: 'search',    label: 'Indexer search', section: 'request', perm: 'acquisition.search' },
+
     /* A checklist over the settings below, for a new instance (ADR-0065). */
-    { id: 'start',     label: 'Getting started', perm: 'admin.system' },
-    { id: 'storage',   label: 'Storage',   perm: 'library.root_folders' },
-    { id: 'indexers',  label: 'Indexers',  perm: 'admin.indexers' },
-    /* The provider's key and the tunnel. Both were reachable only with curl,
-     * and an error message sent operators to a Metadata screen that did not
-     * exist. */
-    { id: 'metadata',  label: 'Metadata',  perm: 'admin.system' },
-    { id: 'notifications', label: 'Notifications', perm: 'admin.system' },
-    { id: 'network',   label: 'Network',   perm: 'admin.network' },
-    { id: 'users',     label: 'Accounts',  perm: 'admin.users' },
-    { id: 'approvals', label: 'Approvals', perm: 'account.approve' },
-    { id: 'invites',   label: 'Invites',   perm: 'account.invite' },
-    { id: 'sessions',  label: 'Sessions' },
-    { id: 'tokens',    label: 'API tokens' },
-    { id: 'security',  label: 'Security' },
-    { id: 'migrate',   label: 'Migrate',   perm: 'admin.system' },
-    /* Read, never changed: there is no route that edits or removes a line
-     * (ADR-0031). */
-    { id: 'audit',     label: 'Audit log', perm: 'admin.audit' },
-    { id: 'tasks',     label: 'Tasks',     perm: 'admin.system' },
+    { id: 'start',     label: 'Getting started', section: 'settings', group: 'Setup', perm: 'admin.system' },
+    { id: 'storage',   label: 'Storage',   section: 'settings', group: 'Setup', perm: 'library.root_folders' },
+    { id: 'indexers',  label: 'Indexers',  section: 'settings', group: 'Setup', perm: 'admin.indexers' },
+    { id: 'metadata',  label: 'Metadata',  section: 'settings', group: 'Setup', perm: 'admin.system' },
+    { id: 'network',   label: 'Network',   section: 'settings', group: 'Setup', perm: 'admin.network' },
+    { id: 'notifications', label: 'Notifications', section: 'settings', group: 'Setup', perm: 'admin.system' },
+    { id: 'identify',  label: 'Identify',  section: 'settings', group: 'Library', perm: 'library.edit' },
+    { id: 'migrate',   label: 'Migrate',   section: 'settings', group: 'Library', perm: 'admin.system' },
+    { id: 'users',     label: 'Accounts',  section: 'settings', group: 'People', perm: 'admin.users' },
+    { id: 'approvals', label: 'Approvals', section: 'settings', group: 'People', perm: 'account.approve' },
+    { id: 'invites',   label: 'Invites',   section: 'settings', group: 'People', perm: 'account.invite' },
+    { id: 'security',  label: 'Security',  section: 'settings', group: 'Your account' },
+    { id: 'sessions',  label: 'Sessions',  section: 'settings', group: 'Your account' },
+    { id: 'tokens',    label: 'API tokens', section: 'settings', group: 'Your account' },
+    { id: 'tasks',     label: 'Tasks',     section: 'settings', group: 'System', perm: 'admin.system' },
     /* Taken and listed here; never downloaded or restored here (ADR-0029). */
-    { id: 'backups',   label: 'Backups',   perm: 'admin.system' },
+    { id: 'backups',   label: 'Backups',   section: 'settings', group: 'System', perm: 'admin.system' },
     /* Every health check at once, and what the process has been saying
      * (ADR-0040). */
-    { id: 'health',    label: 'Health',    perm: 'admin.system' }
+    { id: 'health',    label: 'Health',    section: 'settings', group: 'System', perm: 'admin.system' },
+    /* Read, never changed: there is no route that edits or removes a line
+     * (ADR-0031). */
+    { id: 'audit',     label: 'Audit log', section: 'settings', group: 'System', perm: 'admin.audit' }
   ];
 
   // -------------------------------------------------------------------------
@@ -216,7 +223,13 @@
   var loaders = {};
 
   function visibleViews() {
-    return VIEWS.filter(function (v) { return !v.perm || can(v.perm); });
+    return VIEWS.filter(function (v) {
+      return (!v.perm || can(v.perm)) && !(v.unless && can(v.unless));
+    });
+  }
+
+  function viewOf(id) {
+    return VIEWS.filter(function (v) { return v.id === id; })[0];
   }
 
   /* Views that exist but are not tabs. They are still permission-checked; they
@@ -226,15 +239,38 @@
     return visibleViews().filter(function (v) { return !v.hidden; });
   }
 
+  /* The top bar is the three sections; each opens its first tab. A section
+   * with no tab this account may use is not shown. */
   function buildNav() {
     var nav = $('nav');
     clear(nav);
-    navViews().forEach(function (v) {
+    SECTIONS.forEach(function (sec) {
+      var first = navViews().filter(function (v) { return v.section === sec.key; })[0];
+      if (!first) { return; }
+      var b = el('button', null, sec.label);
+      b.type = 'button';
+      b.setAttribute('data-section', sec.key);
+      b.addEventListener('click', function () { window.location.hash = '#' + first.id; });
+      nav.appendChild(b);
+    });
+  }
+
+  /* The section's tabs, under the bar; Settings' are in titled groups. */
+  function buildSubnav(sectionId, target) {
+    var sub = $('subnav');
+    clear(sub);
+    var group = null;
+    navViews().filter(function (v) { return v.section === sectionId; }).forEach(function (v) {
+      if (v.group && v.group !== group) {
+        group = v.group;
+        sub.appendChild(el('span', 'subnav-group', group));
+      }
       var b = el('button', null, v.label);
       b.type = 'button';
       b.setAttribute('data-target', v.id);
+      if (v.id === target) { b.setAttribute('aria-current', 'page'); }
       b.addEventListener('click', function () { window.location.hash = '#' + v.id; });
-      nav.appendChild(b);
+      sub.appendChild(b);
     });
   }
 
@@ -244,7 +280,9 @@
     for (var i = 0; i < allowed.length; i++) {
       if (allowed[i].id === want) { return want; }
     }
-    return 'overview';
+    /* Old links: Overview became Home, and Add's search is still Add. */
+    var first = navViews()[0];
+    return first ? first.id : 'security';
   }
 
   function showView() {
@@ -253,14 +291,16 @@
     for (var i = 0; i < views.length; i++) {
       views[i].hidden = views[i].getAttribute('data-view') !== target;
     }
+    var section = (viewOf(target) || {}).section;
     var tabs = $('nav').querySelectorAll('button');
     for (var j = 0; j < tabs.length; j++) {
-      if (tabs[j].getAttribute('data-target') === target) {
+      if (tabs[j].getAttribute('data-section') === section) {
         tabs[j].setAttribute('aria-current', 'page');
       } else {
         tabs[j].removeAttribute('aria-current');
       }
     }
+    buildSubnav(section, target);
     $('error').hidden = true;
     /* Adding for a request lasts while the Add screen is open: leaving it is
      * leaving that errand, and the next visit to Add is an ordinary one. */
@@ -279,8 +319,10 @@
     return box;
   }
 
-  loaders.overview = function () {
-    var cards = $('overview-cards');
+  /* The signed-in account, at the top of Security (ADR-0069). */
+  function accountSummary() {
+    var cards = $('account-cards');
+    if (!cards) { return; }
     clear(cards);
     cards.appendChild(stat(me.username, 'signed in as'));
     cards.appendChild(stat(me.role, 'role'));
@@ -295,6 +337,137 @@
       });
     }
   };
+
+  // -------------------------------------------------------------------------
+  // Home (ADR-0069): rows of posters for watching
+  // -------------------------------------------------------------------------
+
+  function tile(title, sub, poster, onOpen, progress) {
+    var t = el('button', 'tile');
+    t.type = 'button';
+    var art = el('div', 'poster');
+    if (poster) {
+      var img = document.createElement('img');
+      img.src = poster;
+      img.alt = '';
+      img.loading = 'lazy';
+      img.addEventListener('error', function () { art.replaceChild(el('div', 'poster-none', title), img); });
+      art.appendChild(img);
+    } else {
+      art.appendChild(el('div', 'poster-none', title));
+    }
+    if (progress > 0) {
+      var bar = el('div', 'tile-progress');
+      var fill = el('div', 'tile-progress-fill');
+      fill.className = 'tile-progress-fill pct-' + Math.min(100, Math.max(1, Math.round(progress * 20) * 5));
+      bar.appendChild(fill);
+      art.appendChild(bar);
+    }
+    t.appendChild(art);
+    t.appendChild(el('div', 'tile-title', title));
+    if (sub) { t.appendChild(el('div', 'tile-sub', sub)); }
+    t.addEventListener('click', onOpen);
+    return t;
+  }
+
+  function shelf(box, heading, tiles, more) {
+    if (!tiles.length) { return; }
+    var sec = el('section', 'shelf');
+    var head = el('div', 'shelf-head');
+    head.appendChild(el('h3', null, heading));
+    if (more) { head.appendChild(button('See all', 'ghost', more)); }
+    sec.appendChild(head);
+    var row = el('div', 'shelf-row');
+    tiles.forEach(function (t) { row.appendChild(t); });
+    sec.appendChild(row);
+    box.appendChild(sec);
+  }
+
+  function openTitle(id) {
+    openAfterLoad = id;
+    window.location.hash = '#library';
+    loaders.library();
+  }
+
+  function seeAll(kind) {
+    return function () {
+      window.location.hash = '#library';
+      $('library-kind').value = kind;
+      loaders.library();
+    };
+  }
+
+  loaders.home = function () {
+    var box = $('home-rows');
+    empty(box, 'Loading…');
+    Promise.all([
+      api('GET', '/api/v1/me/continue').then(function (r) { return r.status === 200 && r.body ? r.body.items || [] : []; }),
+      api('GET', '/api/v1/media').then(function (r) { return r.status === 200 && r.body ? r.body.items || [] : []; })
+    ]).then(function (got) {
+      var going = got[0], items = got[1];
+      clear(box);
+      shelf(box, 'Continue watching', going.map(function (c) {
+        var code = c.season || c.episode ? 'S' + String(c.season).padStart(2, '0') + 'E' + String(c.episode).padStart(2, '0') : '';
+        var left = Math.max(0, Math.round((c.duration_ms - c.position_ms) / 60000));
+        return tile(c.title, [code, left ? left + ' min left' : ''].filter(Boolean).join(' · '), c.poster,
+          function () { watch(c.file_id, c.title + (code ? ' ' + code : '')); },
+          c.duration_ms ? c.position_ms / c.duration_ms : 0);
+      }));
+      var byAdded = items.slice().sort(function (a, b) { return String(b.added_at).localeCompare(String(a.added_at)); });
+      var asTile = function (it) {
+        return tile(it.title, it.year ? String(it.year) : (it.author || ''), it.poster, function () { openTitle(it.id); });
+      };
+      shelf(box, 'Recently added', byAdded.slice(0, 20).map(asTile));
+      [['movie', 'Movies'], ['series', 'TV Shows'], ['artist', 'Music'], ['book', 'Books']].forEach(function (k) {
+        var of = items.filter(function (it) { return it.kind === k[0]; });
+        shelf(box, k[1], of.slice(0, 30).map(asTile), seeAll(k[0]));
+      });
+      if (!box.firstChild) {
+        empty(box, can('library.edit')
+          ? 'The library is empty. Find something to add under Request.'
+          : 'Nothing here yet. Ask for something under Request.');
+      }
+    });
+  };
+
+  // -------------------------------------------------------------------------
+  // Request's Search for an account that may only request (ADR-0069)
+  // -------------------------------------------------------------------------
+
+  loaders.ask = function () {
+    if (!$('ask-results').firstChild) {
+      empty($('ask-results'), 'Search for a film or a series, then ask for it.');
+    }
+  };
+
+  function wireAsk() {
+    var form = $('ask-form');
+    if (!form) { return; }
+    submit(form, function () {
+      var results = $('ask-results');
+      var kind = $('ask-kind').value === 'series' ? 'series' : 'movie';
+      empty(results, 'Searching…');
+      return api('GET', '/api/v1/requests/search?kind=' + kind + '&title=' + encodeURIComponent($('ask-term').value))
+        .then(function (res) {
+          if (res.status !== 200 || !res.body) { empty(results, ''); return fail(res, 'the search failed'); }
+          var matches = res.body.matches || [];
+          if (!matches.length) { return empty(results, 'Nothing by that name. You can still ask in words on the Requests tab.'); }
+          clear(results);
+          matches.forEach(function (m) {
+            var r = row(m.title + (m.year ? ' (' + m.year + ')' : ''), m.overview ? m.overview.slice(0, 220) : null);
+            actions(r).appendChild(button('Request', 'primary', function (b) {
+              b.disabled = true;
+              api('POST', '/api/v1/requests', { kind: kind, title: m.title, year: m.year || 0, note: '' }).then(function (rr) {
+                if (rr.status !== 201 && rr.status !== 200) { b.disabled = false; return fail(rr, 'could not record that request'); }
+                b.textContent = 'Requested';
+                ok((rr.body && rr.body.message) || 'Requested.');
+              });
+            }));
+            results.appendChild(r);
+          });
+        });
+    });
+  }
 
   // -------------------------------------------------------------------------
   // approvals
@@ -1225,6 +1398,7 @@
 
   /* The calendar and feed addresses (ADR-0041): minted here, shown once. */
   loaders.security = function () {
+    accountSummary();
     var status = $('feeds-status');
     var acts = $('feeds-actions');
     if (!status || !acts) { return; }
@@ -4803,6 +4977,7 @@
       wireProxyForm();
       wireNotifications();
       wireRequestForm();
+      wireAsk();
       wireAudit();
       if (can('acquisition.search')) { loadProfiles(); }
 

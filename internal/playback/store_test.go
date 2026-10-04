@@ -96,7 +96,7 @@ func newStoreRig(t *testing.T) *storeRig {
 func (r *storeRig) asUser(id int64) context.Context {
 	return authz.WithPrincipal(context.Background(), &authz.Principal{
 		UserID: id, Username: "u", State: authz.StateActive,
-		MFASatisfied: true,
+		MFASatisfied: true, UnrestrictedLibraries: true,
 		Role: authz.Role{ID: 1, Name: "Admin", Rank: 100,
 			Permissions: authz.NewPermissionSet(authz.AllPermissions...)},
 	})

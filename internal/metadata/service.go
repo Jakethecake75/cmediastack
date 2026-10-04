@@ -242,6 +242,22 @@ func (svc *Service) Check(ctx context.Context) (Health, error) {
 // Gated on editing library items rather than on browsing: this is the search an
 // operator runs when correcting what something IS, and it spends a request
 // against a third party on every call.
+// SearchToRequest is Search for an account that may only request (ADR-0069):
+// films and series, the kinds a request can be for.
+func (svc *Service) SearchToRequest(ctx context.Context, q Query) ([]Match, error) {
+	if err := authz.RequirePermission(ctx, authz.PermSubmitRequest); err != nil {
+		return nil, err
+	}
+	if q.Kind != KindSeries {
+		q.Kind = KindMovie
+	}
+	p := svc.Provider()
+	if p == nil {
+		return nil, ErrNoProvider
+	}
+	return p.Search(ctx, q)
+}
+
 func (svc *Service) Search(ctx context.Context, q Query) ([]Match, error) {
 	if err := authz.RequirePermission(ctx, authz.PermEditLibraryItems); err != nil {
 		return nil, err

@@ -53,7 +53,7 @@ Phase 6 stops at 6n (2026-10-03): the owner deferred audiobooks and anime's
 absolute numbering, to be added if they are needed.
 Phase 7 is the Proxmox deployment: 7a sets a SOCKS5 proxy from the web and adds
 Getting started, with the install scripts and v0.1.0; 7b (v0.1.1) fixes what the
-first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, and 7d (v0.1.3) asks them over HTTP behind one that does not.
+first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, and 7e (v0.2.0) gathers the app into Home, Request and Settings.
 **Scope change, 2026-09-26:** the operator is starting a new library rather than
 migrating one. Migrating from Sonarr is dropped; the Radarr importer (4g) stays,
 and does nothing unless a Radarr database is placed in its directory
@@ -66,9 +66,9 @@ and does nothing unless a Radarr database is placed in its directory
 | | |
 |---|---|
 | Go packages | 38 |
-| Tests | 1475, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Tests | 1480, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached (run again at 6l, after 6h made `golang.org/x/net/html` reached code). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
-| Routes registered | 151 (15 anonymous, 51 admin-hidden, 19 session-only). **0 of 151 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
+| Routes registered | 153 (15 anonymous, 51 admin-hidden, 19 session-only). **0 of 153 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
 | **Can you log in?** | **Yes, in a browser.** First run → wizard → login → authenticator enrollment → working session |
 | **Is there a UI?** | **Yes.** No build step, no third-party frontend code |
@@ -5342,6 +5342,39 @@ HTTP at the same address instead*, the stand-in relayed the HTTP announce to
 
 ---
 
+### Increment 7e (v0.2.0) — Home, Request, Settings ✅
+
+Twenty-nine tabs in one bar, in the order they were built, became three
+sections, as the operator asked and agreed on a mock-up.
+[ADR-0069](docs/adr/0069-home-request-settings.md) was written first.
+
+| What | How |
+|---|---|
+| **Three sections** | The top bar is Home, Request and Settings; each section's tabs sit under it, Settings' in titled groups (Setup, Library, People, Your account, System). Every view keeps its `#hash`; an old `#overview` link opens Home |
+| **Home is for watching** | Rows of posters: Continue watching (with a progress bar, resuming the file), Recently added, Movies, TV Shows, Music, Books; a poster opens the title, *See all* the library filtered to its kind. Continue watching is `GET /api/v1/me/continue`: the account's own unfinished places, newest first, read under its library scope |
+| **One search under Request** | An account that may add searches films, series, music and books and adds, as Add did. One that may only request searches films and series and asks with **Request**, through `GET /api/v1/requests/search` (held by `request.submit`; the metadata service's own `SearchToRequest` requires it). Discover, Requests, Downloads (the queue), Wanted and Indexer search sit beside it |
+| **Overview** | Gone; its summary of the signed-in account is at the top of Security |
+
+#### Verified
+
+| Claim | How it is established |
+|---|---|
+| Continue watching is the account's unfinished places, newest first, with what each is — episode, position, duration, artwork only for an identified title — and nothing outside its libraries | `playback.TestContinueWatchingIsMyUnfinishedPlacesNewestFirst`, `TestContinueWatchingOffersNothingOutsideMyLibraries`, `api.TestContinueWatchingListsMyPlacesAndOnlyWhatICanSee` — mutation-verified |
+| An account that may only request searches to request, films and series only, and still may not use the editor's search | `metadata.TestSearchingToRequestNeedsTheRequestPermission`, `api.TestARequesterSearchesToRequest` — mutation-verified |
+| Every tab has a section and a loader | `web.TestEveryNavEntryHasASectionAndEverySectionHasANavEntry`, `TestEveryDataViewHasALoader` |
+
+Eleven mutations, all killed — one rewritten after it broke the build.
+
+**On the running binary**, in headless Chrome with five films, three series
+and a saved place in one film: the bar showed Home, Request and Settings;
+Home's tabs were Home and Library and its rows Continue watching (Dune, *95 min
+left*), Recently added, Movies and TV Shows; Request's tabs Search, Discover,
+Requests, Downloads, Wanted and Indexer search; Settings' tabs grouped under
+Setup, Library, People, Your account and System; and `#overview` opened Home.
+Screenshots: `Claude outputs/v020-*.png`.
+
+---
+
 ## Decisions locked
 
 | # | Decision | ADR |
@@ -5414,6 +5447,7 @@ HTTP at the same address instead*, the stand-in relayed the HTTP announce to
 | 66 | A title's id is never used again; deleting a title stops its downloads; the Queue says why peers do not connect | [0066](docs/adr/0066-a-deleted-title-and-its-downloads.md) |
 | 67 | UDP trackers go through the SOCKS5 proxy's UDP association, their names resolved by the proxy; DHT and uTP stay off | [0067](docs/adr/0067-udp-trackers-through-the-proxy.md) |
 | 68 | Behind a proxy that refuses UDP, each UDP tracker is also asked over HTTP; the Queue says how each download is doing | [0068](docs/adr/0068-peers-behind-a-proxy-without-udp.md) |
+| 69 | Three sections — Home for watching, Request to find, add or ask, Settings for the rest | [0069](docs/adr/0069-home-request-settings.md) |
 | 9 | Opaque server-side sessions, not JWTs | See the header comment in `internal/identity/session.go` — immediate revocation is a hard requirement, and a self-contained token cannot do it without the database lookup a JWT exists to avoid |
 
 ### Defaults taken in the absence of an answer — override any of these

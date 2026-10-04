@@ -24,6 +24,7 @@ type MetadataService interface {
 	SetToken(ctx context.Context, token string) (metadata.Health, error)
 	Check(ctx context.Context) (metadata.Health, error)
 	Search(ctx context.Context, q metadata.Query) ([]metadata.Match, error)
+	SearchToRequest(ctx context.Context, q metadata.Query) ([]metadata.Match, error)
 	Details(ctx context.Context, kind metadata.Kind, id int64) (metadata.Details, error)
 }
 
@@ -169,6 +170,25 @@ func (h *Handlers) SearchMetadata(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusNotImplemented, "no metadata subsystem is wired")
 		return
 	}
+	h.searchMetadataWith(w, r, h.metadata.Search)
+}
+
+// SearchToRequest is the provider search for an account that may only
+// request (ADR-0069).
+func (h *Handlers) SearchToRequest(w http.ResponseWriter, r *http.Request) {
+	if h.metadata == nil {
+		writeProblem(w, http.StatusNotImplemented, "no metadata subsystem is wired")
+		return
+	}
+	h.searchMetadataWith(w, r, h.metadata.SearchToRequest)
+}
+
+func (h *Handlers) searchMetadataWith(w http.ResponseWriter, r *http.Request,
+	search func(context.Context, metadata.Query) ([]metadata.Match, error)) {
+	if h.metadata == nil {
+		writeProblem(w, http.StatusNotImplemented, "no metadata subsystem is wired")
+		return
+	}
 	q := metadata.Query{
 		Kind:  metadata.Kind(strings.ToLower(strings.TrimSpace(r.URL.Query().Get("kind")))),
 		Title: strings.TrimSpace(r.URL.Query().Get("title")),
@@ -184,7 +204,7 @@ func (h *Handlers) SearchMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	matches, err := h.metadata.Search(r.Context(), q)
+	matches, err := search(r.Context(), q)
 	switch {
 	case errors.Is(err, metadata.ErrNoProvider):
 		writeProblem(w, http.StatusConflict,

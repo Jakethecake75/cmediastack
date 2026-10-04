@@ -4,7 +4,7 @@
 Run `go generate ./internal/docs/` after changing routes;
 `docs.TestTheGeneratedDocumentsAreCurrent` fails while this file is stale.
 
-151 routes. **15 are reachable without a session**; every one of those also appears in `api.AnonymousAllowlist`, and `Router.register` panics at startup if the two ever disagree.
+153 routes. **15 are reachable without a session**; every one of those also appears in `api.AnonymousAllowlist`, and `Router.register` panics at startup if the two ever disagree.
 
 - **51 hidden** — 404 rather than 403 when unauthorized, so the route's existence is not disclosed (requirements §7.3).
 - **19 session-only** — an API token may not use them whatever its scope. Credential management lives here.
@@ -185,6 +185,7 @@ Run `go generate ./internal/docs/` after changing routes;
 | DELETE | `/api/v1/me/sessions/{id}` | authenticated | session only |
 | DELETE | `/api/v1/me/tokens/{id}` | authenticated | session only |
 | GET | `/api/v1/me` | authenticated |  |
+| GET | `/api/v1/me/continue` | `media.browse` |  |
 | GET | `/api/v1/me/feeds` | authenticated | session only |
 | GET | `/api/v1/me/sessions` | authenticated | session only |
 | GET | `/api/v1/me/tokens` | authenticated | session only |
@@ -269,6 +270,7 @@ Run `go generate ./internal/docs/` after changing routes;
 | Method | Path | Requires | Notes |
 |---|---|---|---|
 | GET | `/api/v1/requests` | `request.submit` |  |
+| GET | `/api/v1/requests/search` | `request.submit` |  |
 | POST | `/api/v1/requests` | `request.submit` |  |
 | POST | `/api/v1/requests/{id}/approve` | `request.approve` |  |
 | POST | `/api/v1/requests/{id}/deny` | `request.approve` |  |

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jakethecake75/cmediastack/internal/authz"
+	"github.com/jakethecake75/cmediastack/internal/library"
 	"github.com/jakethecake75/cmediastack/internal/platform/db"
 )
 
@@ -220,6 +221,58 @@ func (p *Positions) Get(ctx context.Context, fileID int64) (Position, error) {
 	rec.Finished = finished == 1
 	rec.UpdatedAt = parseTS(updated)
 	return rec, nil
+}
+
+// InProgressItem is one unfinished place, with what it is (ADR-0069).
+type InProgressItem struct {
+	FileID, ItemID     int64
+	TMDBID             int64 // 0 when the title is not identified: it has no artwork
+	Kind, Title        string
+	Year               int
+	Season, Episode    int
+	Position, Duration time.Duration
+	UpdatedAt          time.Time
+}
+
+// InProgress is the caller's unfinished places, newest first — Home's
+// Continue watching — limited to titles the caller may see (ADR-0037).
+func (p *Positions) InProgress(ctx context.Context, limit int) ([]InProgressItem, error) {
+	if err := authz.RequirePermission(ctx, authz.PermBrowse); err != nil {
+		return nil, err
+	}
+	actor := authz.FromContext(ctx)
+	if actor == nil || actor.UserID <= 0 {
+		return nil, ErrNoPosition
+	}
+	scope, args := library.Visible(ctx, "i")
+	rows, err := p.db.QueryContext(ctx, `
+		SELECT pp.media_file_id, i.id, COALESCE(i.tmdb_id, 0), i.kind, i.title, COALESCE(i.year, 0),
+		       COALESCE(f.season, 0), COALESCE(f.episode, 0),
+		       pp.position_ms, pp.duration_ms, pp.updated_at
+		  FROM playback_position pp
+		  JOIN media_file f ON f.id = pp.media_file_id
+		  JOIN media_item i ON i.id = f.item_id
+		 WHERE pp.user_id = ? AND pp.finished = 0 AND `+scope+`
+		 ORDER BY pp.updated_at DESC
+		 LIMIT ?`, append(append([]any{actor.UserID}, args...), limit)...)
+	if err != nil {
+		return nil, fmt.Errorf("playback: reading places: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []InProgressItem
+	for rows.Next() {
+		var it InProgressItem
+		var posMS, durMS int64
+		var updated string
+		if err := rows.Scan(&it.FileID, &it.ItemID, &it.TMDBID, &it.Kind, &it.Title, &it.Year,
+			&it.Season, &it.Episode, &posMS, &durMS, &updated); err != nil {
+			return nil, err
+		}
+		it.Position, it.Duration = time.Duration(posMS)*time.Millisecond, time.Duration(durMS)*time.Millisecond
+		it.UpdatedAt = parseTS(updated)
+		out = append(out, it)
+	}
+	return out, rows.Err()
 }
 
 // Forget removes the caller's place in a file.

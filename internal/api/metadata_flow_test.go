@@ -23,12 +23,13 @@ type fakeMetadata struct {
 	// tokens records EVERY token handed to SetToken, including the ones that
 	// were rejected. A recorder that only kept accepted values could not tell
 	// "the bad key was refused" from "SetToken was never reached".
-	tokens []string
-	stored string
-	health metadata.Health
-	err    error
-	status metadata.Status
-	checks int
+	tokens  []string
+	stored  string
+	health  metadata.Health
+	err     error
+	status  metadata.Status
+	checks  int
+	matches []metadata.Match
 }
 
 func (f *fakeMetadata) Status(context.Context) (metadata.Status, error) {
@@ -51,7 +52,11 @@ func (f *fakeMetadata) Check(context.Context) (metadata.Health, error) {
 }
 
 func (f *fakeMetadata) Search(context.Context, metadata.Query) ([]metadata.Match, error) {
-	return nil, f.err
+	return f.matches, f.err
+}
+
+func (f *fakeMetadata) SearchToRequest(context.Context, metadata.Query) ([]metadata.Match, error) {
+	return f.matches, f.err
 }
 
 func (f *fakeMetadata) Details(context.Context, metadata.Kind, int64) (metadata.Details, error) {

@@ -440,6 +440,14 @@ func (s *Service) SavePosition(ctx context.Context, fileID int64,
 }
 
 // ForgetPosition removes the caller's place in a file.
+// InProgress is the caller's unfinished places, newest first (ADR-0069).
+func (s *Service) InProgress(ctx context.Context, limit int) ([]InProgressItem, error) {
+	if s.positions == nil {
+		return nil, nil
+	}
+	return s.positions.InProgress(ctx, limit)
+}
+
 func (s *Service) ForgetPosition(ctx context.Context, fileID int64) error {
 	if s.positions == nil {
 		return nil

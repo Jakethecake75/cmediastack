@@ -333,3 +333,80 @@ func TestDeletingAFileForgetsEverybodysPlaceInIt(t *testing.T) {
 		t.Errorf("%d position(s) survived the file being deleted", n)
 	}
 }
+
+// Home's Continue watching (ADR-0069): the account's own unfinished places,
+// newest first, with what each is — and only what the account may see.
+func TestContinueWatchingIsMyUnfinishedPlacesNewestFirst(t *testing.T) {
+	r := newStoreRig(t)
+	stamp := fixedNow.Format(time.RFC3339Nano)
+	for _, q := range []string{
+		`INSERT INTO app_user (username, email, password_hash, state, role_id, rating_ceiling, created_at, updated_at)
+		 VALUES ('sam', 'sam@example.com', 'x', 'active', 1, 0, '` + stamp + `', '` + stamp + `')`,
+		`INSERT INTO media_item (kind, title, year, sort_title, root_folder_id, folder, added_at, updated_at)
+		 VALUES ('series', 'Severance', 2022, 'Severance', 1, 'Severance', '` + stamp + `', '` + stamp + `')`,
+		`INSERT INTO media_file (item_id, root_folder_id, relative_path, size_bytes, quality, imported_at, season, episode)
+		 VALUES (2, 1, 'Severance/S01E02.mkv', 1000, 'WEBDL-1080p', '` + stamp + `', 1, 2)`,
+		`INSERT INTO media_file (item_id, root_folder_id, relative_path, size_bytes, quality, imported_at, season, episode)
+		 VALUES (2, 1, 'Severance/S01E03.mkv', 1000, 'WEBDL-1080p', '` + stamp + `', 1, 3)`,
+	} {
+		if _, err := r.db.ExecContext(r.ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := func(d time.Duration) *Positions {
+		return NewPositions(r.db, func() time.Time { return fixedNow.Add(d) })
+	}
+	me := r.asUser(1)
+	if _, err := at(0).Save(me, r.fileID, mins(30), mins(90)); err != nil { // Arrival, half-way
+		t.Fatal(err)
+	}
+	if _, err := at(time.Hour).Save(me, 2, mins(10), mins(50)); err != nil { // S01E02, newer
+		t.Fatal(err)
+	}
+	if _, err := at(2*time.Hour).Save(me, 3, mins(49), mins(50)); err != nil { // S01E03, finished
+		t.Fatal(err)
+	}
+	if _, err := at(3*time.Hour).Save(r.asUser(2), r.fileID, mins(5), mins(90)); err != nil { // someone else's
+		t.Fatal(err)
+	}
+
+	got, err := r.positions().InProgress(me, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %+v, want two unfinished places", got)
+	}
+	if got[0].Title != "Severance" || got[0].Kind != "series" || got[0].Season != 1 || got[0].Episode != 2 ||
+		got[0].FileID != 2 || got[0].ItemID != 2 || got[0].Position != mins(10) || got[0].Duration != mins(50) {
+		t.Errorf("first = %+v, want Severance S01E02 at 10m of 50m", got[0])
+	}
+	if got[1].Title != "Arrival" || got[1].Position != mins(30) {
+		t.Errorf("second = %+v, want Arrival at 30m", got[1])
+	}
+	if got[1].TMDBID != 0 {
+		t.Errorf("an unidentified title reports artwork id %d", got[1].TMDBID)
+	}
+	if one, _ := r.positions().InProgress(me, 1); len(one) != 1 {
+		t.Errorf("a limit of 1 gave %d", len(one))
+	}
+}
+
+func TestContinueWatchingOffersNothingOutsideMyLibraries(t *testing.T) {
+	r := newStoreRig(t)
+	if _, err := r.positions().Save(r.asUser(1), r.fileID, mins(30), mins(90)); err != nil {
+		t.Fatal(err)
+	}
+	restricted := authz.WithPrincipal(context.Background(), &authz.Principal{
+		UserID: 1, Username: "jacob", State: authz.StateActive, MFASatisfied: true,
+		Role:       authz.Role{ID: 1, Name: "User", Rank: 10, Permissions: authz.NewPermissionSet(authz.PermBrowse)},
+		LibraryIDs: []int64{999},
+	})
+	got, err := r.positions().InProgress(restricted, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("offered %+v from a library the account may not see", got)
+	}
+}

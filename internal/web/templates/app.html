@@ -8,24 +8,31 @@
     <span id="whoami" class="whoami"></span>
     <button type="button" id="logout" class="ghost">Sign out</button>
   </header>
+  <nav id="subnav" class="subnav" aria-label="Section"></nav>
 
   <p id="error" class="error" hidden role="alert"></p>
   <p id="notice" class="ok" hidden role="status"></p>
 
   <main class="content">
 
-    <section class="view" data-view="overview" hidden>
-      <h2>Overview</h2>
-      <div class="grid" id="overview-cards"></div>
-      <h3>Finding your way</h3>
-      <p class="hint">
-        <strong>Library</strong> is what is on disk, and plays it;
-        <strong>Wanted</strong> is what is missing; <strong>Requests</strong> is
-        where you ask for something that is not here. The tabs you see are the
-        ones your role may use. <em>Libraries</em> above is how many of this
-        instance's libraries your account can see — all of them, or the ones an
-        administrator chose — and a title outside them does not appear anywhere.
-      </p>
+    <section class="view" data-view="home" hidden>
+      <div id="home-rows"></div>
+    </section>
+
+    <section class="view" data-view="ask" hidden>
+      <h2>Find something to ask for</h2>
+      <form id="ask-form" class="inline-form" autocomplete="off">
+        <label for="ask-kind">Kind</label>
+        <select id="ask-kind">
+          <option value="movie">Film</option>
+          <option value="series">Series</option>
+        </select>
+        <label for="ask-term">Title</label>
+        <input id="ask-term" type="text" maxlength="200" required>
+        <button type="submit" class="primary">Search</button>
+      </form>
+      <div id="ask-results" class="list"></div>
+      <p class="hint">Not here? Ask for it in words on the Requests tab.</p>
     </section>
 
     <section class="view" data-view="library" hidden>
@@ -47,7 +54,7 @@
     </section>
 
     <section class="view" data-view="add" hidden>
-      <h2>Add to the library</h2>
+      <h2>Find a title</h2>
       <p class="hint">
         Choose a series or a film from the metadata provider. Nothing is
         downloaded and nothing is created on disk: its folder appears with the
@@ -518,6 +525,8 @@
 
     <section class="view" data-view="security" hidden>
       <h2>Security</h2>
+      <h3>Your account</h3>
+      <div class="grid" id="account-cards"></div>
 
       <form id="password-form" class="inline-form" autocomplete="off">
         <h3>Change password</h3>

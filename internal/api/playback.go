@@ -29,6 +29,8 @@ type PlaybackService interface {
 	SavePosition(ctx context.Context, fileID int64, position, duration time.Duration) (playback.Position, error)
 	// ForgetPosition removes the caller's place in a file.
 	ForgetPosition(ctx context.Context, fileID int64) error
+	// InProgress is the caller's unfinished places, newest first (ADR-0069).
+	InProgress(ctx context.Context, limit int) ([]playback.InProgressItem, error)
 	// PlanConversion reports whether converting a file would make it playable.
 	PlanConversion(ctx context.Context, fileID int64, target playback.AudioTarget) (playback.RemuxPlan, playback.Probe, error)
 	// Convert streams a converted version of a file.
@@ -482,4 +484,37 @@ func (h *Handlers) ServeSubtitle(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeAuthzAware(w, err)
 	}
+}
+
+// ContinueWatching is the caller's unfinished places, newest first, each with
+// the title it belongs to — Home's first row (ADR-0069).
+func (h *Handlers) ContinueWatching(w http.ResponseWriter, r *http.Request) {
+	if h.playback == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
+		return
+	}
+	items, err := h.playback.InProgress(r.Context(), 20)
+	if err != nil {
+		writeAuthzAware(w, err)
+		return
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		row := map[string]any{
+			"file_id": it.FileID, "item_id": it.ItemID, "kind": it.Kind, "title": it.Title,
+			"position_ms": it.Position.Milliseconds(), "duration_ms": it.Duration.Milliseconds(),
+			"updated_at": it.UpdatedAt,
+		}
+		if it.TMDBID > 0 { // as the library list: only an identified title has artwork
+			row["poster"] = artworkPath(it.ItemID)
+		}
+		if it.Year > 0 {
+			row["year"] = it.Year
+		}
+		if it.Season > 0 || it.Episode > 0 {
+			row["season"], row["episode"] = it.Season, it.Episode
+		}
+		out = append(out, row)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }

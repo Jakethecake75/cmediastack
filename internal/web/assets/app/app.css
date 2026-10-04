@@ -617,3 +617,59 @@ footer.source {
   opacity: 0.7;
   padding: 1.5rem 1rem 1rem;
 }
+
+/* Sections (ADR-0069): the section's tabs under the top bar. */
+.subnav {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;
+  padding: 8px 20px; border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.subnav button {
+  background: transparent; border: 1px solid transparent; color: var(--muted);
+  padding: 4px 10px; border-radius: 999px; font-size: 13px; cursor: pointer;
+}
+.subnav button:hover { color: var(--text); }
+.subnav button[aria-current="page"] { color: var(--text); border-color: var(--line); background: var(--surface-2); }
+.subnav-group {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+  margin: 0 2px 0 10px;
+}
+.subnav-group:first-child { margin-left: 0; }
+
+/* Home's rows of posters. */
+.shelf { margin: 8px 0 22px; }
+.shelf-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.shelf-head h3 { margin: 0 0 8px; }
+.shelf-row {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 132px; gap: 12px;
+  overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity;
+}
+.tile {
+  background: none; border: 0; padding: 0; text-align: left; color: var(--text);
+  cursor: pointer; scroll-snap-align: start; font: inherit;
+}
+.tile .poster { width: 132px; height: 198px; position: relative; }
+.tile:hover .poster, .tile:focus-visible .poster { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tile-title { font-size: 13px; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0, 0, 0, 0.5); }
+.tile-progress-fill { height: 100%; background: var(--accent); width: 0; }
+.tile-progress-fill.pct-5 { width: 5%; }
+.tile-progress-fill.pct-10 { width: 10%; }
+.tile-progress-fill.pct-15 { width: 15%; }
+.tile-progress-fill.pct-20 { width: 20%; }
+.tile-progress-fill.pct-25 { width: 25%; }
+.tile-progress-fill.pct-30 { width: 30%; }
+.tile-progress-fill.pct-35 { width: 35%; }
+.tile-progress-fill.pct-40 { width: 40%; }
+.tile-progress-fill.pct-45 { width: 45%; }
+.tile-progress-fill.pct-50 { width: 50%; }
+.tile-progress-fill.pct-55 { width: 55%; }
+.tile-progress-fill.pct-60 { width: 60%; }
+.tile-progress-fill.pct-65 { width: 65%; }
+.tile-progress-fill.pct-70 { width: 70%; }
+.tile-progress-fill.pct-75 { width: 75%; }
+.tile-progress-fill.pct-80 { width: 80%; }
+.tile-progress-fill.pct-85 { width: 85%; }
+.tile-progress-fill.pct-90 { width: 90%; }
+.tile-progress-fill.pct-95 { width: 95%; }
+.tile-progress-fill.pct-100 { width: 100%; }

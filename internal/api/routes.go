@@ -168,6 +168,8 @@ func RegisterRoutes(rt *Router, h *Handlers) {
 	// it is computed from the principal in request.Service.List.
 	rt.Permission(http.MethodPost, "/api/v1/requests", authz.PermSubmitRequest, h.or(h.SubmitRequest))
 	rt.Permission(http.MethodGet, "/api/v1/requests", authz.PermSubmitRequest, h.or(h.ListRequests))
+	// The provider search for an account that may only request (ADR-0069).
+	rt.Permission(http.MethodGet, "/api/v1/requests/search", authz.PermSubmitRequest, h.or(h.SearchToRequest))
 	rt.Permission(http.MethodPost, "/api/v1/requests/{id}/approve", authz.PermApproveRequests, h.or(h.ApproveRequest))
 	rt.Permission(http.MethodPost, "/api/v1/requests/{id}/deny", authz.PermApproveRequests, h.or(h.DenyRequest))
 	// Which library item satisfies an approved request (ADR-0028). Saying which
@@ -277,6 +279,8 @@ func RegisterRoutes(rt *Router, h *Handlers) {
 	// it on a throttle and again as the page unloads, so duplicates are normal.
 	rt.Permission(http.MethodPut, "/api/v1/files/{id}/position", authz.PermBrowse, h.or(h.SavePosition))
 	rt.Permission(http.MethodDelete, "/api/v1/files/{id}/position", authz.PermBrowse, h.or(h.ForgetPosition))
+	// Home's Continue watching: the caller's own unfinished places (ADR-0069).
+	rt.Permission(http.MethodGet, "/api/v1/me/continue", authz.PermBrowse, h.or(h.ContinueWatching))
 	// Converting a file so a browser can play it: the video is copied and only
 	// the audio is rebuilt (ADR-0020). Browse, like the stream it replaces —
 	// it is the same file, made openable. The admission limit is what bounds
