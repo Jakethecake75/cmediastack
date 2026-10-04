@@ -2274,9 +2274,9 @@ func TestATransferWithNoQueueRowIsShownAsUnrecorded(t *testing.T) {
 	}
 }
 
-// "What has this instance acquired" is a question the operator is answerable
-// for. A queue showing only what is in flight cannot answer it.
-func TestFinishedAndStoppedTransfersStayInTheQueueView(t *testing.T) {
+// A finished download stays in the view; a removed one leaves it (ADR-0070),
+// though its row stays behind as automatic acquisition's blocklist.
+func TestFinishedTransfersStayAndRemovedOnesLeaveTheQueueView(t *testing.T) {
 	r := newRig(t)
 	admin := r.bootstrapAdmin()
 
@@ -2290,25 +2290,15 @@ func TestFinishedAndStoppedTransfersStayInTheQueueView(t *testing.T) {
 
 	res := admin.get("/api/v1/queue")
 	items, _ := res.Body["items"].([]any)
-	if len(items) != 2 {
-		t.Fatalf("items = %d, want 2\nbody: %s", len(items), res.Raw)
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want only the finished one: %s", len(items), res.Raw)
 	}
-
-	seen := map[string]bool{}
-	for _, raw := range items {
-		it, _ := raw.(map[string]any)
-		seen[it["status"].(string)] = true
-		if it["title"] == "Finished" {
-			if it["completed_at"] == nil {
-				t.Error("a completed transfer has no completion time")
-			}
-			if done, _ := it["done"].(bool); !done {
-				t.Error("a completed transfer is not marked done")
-			}
-		}
+	it, _ := items[0].(map[string]any)
+	if it["title"] != "Finished" || it["completed_at"] == nil {
+		t.Errorf("item = %v", it)
 	}
-	if !seen["complete"] || !seen["stopped"] {
-		t.Errorf("statuses present = %v", seen)
+	if done, _ := it["done"].(bool); !done {
+		t.Error("a completed transfer is not marked done")
 	}
 }
 

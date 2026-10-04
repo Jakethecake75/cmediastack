@@ -3,7 +3,9 @@ package download
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"os"
 	"time"
 )
 
@@ -203,15 +205,26 @@ func (m *Manager) DataPathFor(hash string) (string, error) { return m.engine.Dat
 func (m *Manager) List() []Transfer                        { return m.engine.List() }
 func (m *Manager) Notes() []string                         { return m.engine.Notes() }
 
-// Remove stops a transfer and marks the row stopped.
+// Remove stops a transfer, deletes its folder in the download directory and
+// marks the row stopped (ADR-0070). The folder is the download's own copy: an
+// import hard-links or copies into the library, so an imported title keeps its
+// file.
 //
-// The row is kept rather than deleted. "What has this instance acquired" is a
-// question the operator is answerable for, and a queue that forgets what it
-// removed answers it wrongly. Files on disk are untouched either way: unlinking
-// bytes is EffectDestroyMediaBytes, a permission this path does not hold.
+// The row is kept rather than deleted: the queue is automatic acquisition's
+// blocklist, and a removed release must not be grabbed again by itself. A row
+// the engine is not running, a finished download, is removed the same way.
 func (m *Manager) Remove(hash string) error {
 	if err := m.engine.Remove(hash); err != nil {
+		if !errors.Is(err, ErrNotFound) || !m.recorded(hash) {
+			return err
+		}
+	}
+	path, err := m.engine.DataPathFor(hash)
+	if err != nil {
 		return err
+	}
+	if err := os.RemoveAll(path); err != nil {
+		return fmt.Errorf("download: deleting the files of %s: %w", hash, err)
 	}
 	if m.store != nil {
 		ctx, cancel := detached()
@@ -224,6 +237,17 @@ func (m *Manager) Remove(hash string) error {
 		}
 	}
 	return nil
+}
+
+// recorded reports whether the queue holds a row for hash.
+func (m *Manager) recorded(hash string) bool {
+	if m.store == nil {
+		return false
+	}
+	ctx, cancel := detached()
+	defer cancel()
+	_, err := m.store.Get(ctx, hash)
+	return err == nil
 }
 
 // Close shuts the engine down.

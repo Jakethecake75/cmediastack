@@ -11,8 +11,8 @@ import (
 	"github.com/jakethecake75/cmediastack/internal/download"
 )
 
-// The queue says a download stopped moving, since when, and whether it was
-// given up (ADR-0034).
+// The queue says a download stopped moving and since when (ADR-0034); one
+// given up leaves it.
 func TestTheQueueSaysADownloadStalled(t *testing.T) {
 	person := int64(1)
 	moved := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
@@ -47,10 +47,12 @@ func TestTheQueueSaysADownloadStalled(t *testing.T) {
 	for i, it := range body.Items {
 		got[it.InfoHash] = i
 	}
-	a, b, c := body.Items[got[hashFor("a")]], body.Items[got[hashFor("b")]], body.Items[got[hashFor("c")]]
-	if a.Stalled == nil || !a.Stalled.GivenUp || !a.Stalled.Since.Equal(moved) || !a.Stalled.FoundAt.Equal(found) {
-		t.Errorf("the machine's: %+v; want given up, still since %v", a.Stalled, moved)
+	// Given up is stopped, and a stopped download leaves the view (ADR-0070):
+	// its stall was announced when it was found.
+	if _, listed := got[hashFor("a")]; listed || len(body.Items) != 2 {
+		t.Errorf("the machine's given-up download is still listed: %+v", body.Items)
 	}
+	b, c := body.Items[got[hashFor("b")]], body.Items[got[hashFor("c")]]
 	if b.Stalled == nil || b.Stalled.GivenUp || !b.Stalled.Since.Equal(moved) {
 		t.Errorf("the person's: %+v; want reported, not given up, since it was added", b.Stalled)
 	}

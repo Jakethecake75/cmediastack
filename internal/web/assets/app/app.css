@@ -673,3 +673,35 @@ footer.source {
 .tile-progress-fill.pct-90 { width: 90%; }
 .tile-progress-fill.pct-95 { width: 95%; }
 .tile-progress-fill.pct-100 { width: 100%; }
+
+/* Search (ADR-0070): one bar, then posters to choose from. */
+.find-bar {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;
+  padding: 14px 16px; margin-bottom: 16px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.find-field label { margin-top: 0; }
+.find-term { flex: 1 1 240px; }
+.find-term input { width: 100%; max-width: none; }
+#find-year { width: 6.5rem; }
+.poster-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 16px 12px;
+}
+.poster-grid .tile .poster { width: 100%; height: auto; aspect-ratio: 2 / 3; }
+.tile.chosen .poster { outline: 3px solid var(--accent); outline-offset: 2px; }
+.find-detail {
+  margin-bottom: 18px; padding: 16px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.find-detail-head { display: flex; gap: 18px; align-items: flex-start; }
+.find-detail-head .poster { flex: 0 0 150px; width: 150px; }
+.find-detail-text { flex: 1; min-width: 0; }
+.find-detail-text h3 { margin: 0 0 4px; }
+.find-detail-text .overview { margin: 10px 0; line-height: 1.5; }
+#find-requests { margin-top: 28px; }
+@media (max-width: 640px) {
+  .find-detail-head .poster { flex-basis: 96px; width: 96px; }
+  .poster-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+}
+.ask-words { margin: 14px 0 22px; }
+.ask-words summary { cursor: pointer; color: var(--accent); font-weight: 600; margin-bottom: 10px; }

@@ -53,7 +53,7 @@ Phase 6 stops at 6n (2026-10-03): the owner deferred audiobooks and anime's
 absolute numbering, to be added if they are needed.
 Phase 7 is the Proxmox deployment: 7a sets a SOCKS5 proxy from the web and adds
 Getting started, with the install scripts and v0.1.0; 7b (v0.1.1) fixes what the
-first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, and 7f (v0.2.1) starts a magnet download once its metadata arrives.
+first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, and 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete.
 **Scope change, 2026-09-26:** the operator is starting a new library rather than
 migrating one. Migrating from Sonarr is dropped; the Radarr importer (4g) stays,
 and does nothing unless a Radarr database is placed in its directory
@@ -66,7 +66,7 @@ and does nothing unless a Radarr database is placed in its directory
 | | |
 |---|---|
 | Go packages | 38 |
-| Tests | 1481, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Tests | 1485, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached (run again at 6l, after 6h made `golang.org/x/net/html` reached code). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
 | Routes registered | 153 (15 anonymous, 51 admin-hidden, 19 session-only). **0 of 153 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
@@ -5391,6 +5391,42 @@ added from a `.torrent` file were never affected.
 
 ---
 
+### Increment 7g (v0.3.0) — one Search with posters, live Downloads, Remove deletes ✅
+
+Asked for once downloads worked. [ADR-0070](docs/adr/0070-one-search-live-downloads-remove-deletes.md)
+was written first.
+
+| What | How |
+|---|---|
+| **Request is Search, Downloads, Wanted** | Discover's tab is gone (its route stays). Search, Requests and Indexer search are one tab: a single bar searches films, series, music, books or — for an account that may — the indexers ("Releases"), and the account's requests, the form to ask in words and its reported problems sit beneath. Old links (`#add`, `#ask`, `#search`, `#requests`, `#discover`) open it |
+| **Posters to choose from** | A film or series search is a grid of posters; choosing one opens its overview with **Add** or **Request**. Each result's poster is recorded against the account that searched (`offered_poster`, migration 0038), so the poster route — which fetches only what this instance recorded — will fetch and serve it, to that account and to editors, as before |
+| **Downloads is live** | Re-read every two seconds while open and visible; figures change in place, so an open History stays open. The engine notes and the peer-connection line are gone from the page (the API keeps them) |
+| **Remove deletes** | Remove (asked twice) stops the transfer, deletes `<data_dir>/<info hash>` and drops the row from the list. The row stays, stopped, as automatic acquisition's blocklist. An import hard-links or copies, so a title already imported keeps its file. A finished download can be removed too |
+
+#### Verified
+
+| Claim | How it is established |
+|---|---|
+| Remove deletes the download's folder and nothing beside it, keeps the row stopped, and works on a download no longer running; one never recorded is not found | `download.TestRemovingADownloadDeletesItsFilesAndKeepsItsRow`, `TestADownloadNotRunningCanStillBeRemoved` — mutation-verified |
+| A removed (stopped) download leaves the Downloads list; a finished one stays | `api.TestFinishedTransfersStayAndRemovedOnesLeaveTheQueueView` — mutation-verified |
+| A search answers with this instance's poster path; the poster is served to the account that searched and to editors, never to another account, and never one it was not offered | `api.TestASearchOffersPostersToTheAccountThatSearched` — mutation-verified |
+| An offered poster is fetched from the path the search recorded, and recording needs the permission to browse | `identify.TestAnOfferedPosterIsFetchedFromTheRecordedPath` — mutation-verified |
+| A magnet started before its metadata downloads (7f) | `download.TestAMagnetStartedBeforeItsMetadataStillDownloads` — mutation-verified here |
+
+Thirteen mutations, all killed.
+
+**On the running binary**, in Chrome: as an admin, Request's tabs were Search,
+Downloads and Wanted; Search offered Films, Series, Music, Books and Releases;
+a film search (stubbed, no provider offline) showed a poster grid, and a
+poster opened its overview with **Add…**; Releases asked the indexer and
+listed both results with Grab. Downloads replaced its figures every two
+seconds with a History panel left open; Remove asked again, then the list said
+*Nothing is downloading*, the download's folder was gone and its row was
+`stopped`. As a requester: Search and Wanted only, Films and Series only, and
+**Request** on a poster recorded the request, which appeared beneath.
+
+---
+
 ## Decisions locked
 
 | # | Decision | ADR |
@@ -5464,6 +5500,7 @@ added from a `.torrent` file were never affected.
 | 67 | UDP trackers go through the SOCKS5 proxy's UDP association, their names resolved by the proxy; DHT and uTP stay off | [0067](docs/adr/0067-udp-trackers-through-the-proxy.md) |
 | 68 | Behind a proxy that refuses UDP, each UDP tracker is also asked over HTTP; the Queue says how each download is doing | [0068](docs/adr/0068-peers-behind-a-proxy-without-udp.md) |
 | 69 | Three sections — Home for watching, Request to find, add or ask, Settings for the rest | [0069](docs/adr/0069-home-request-settings.md) |
+| 70 | One Search with posters; Downloads live; Remove deletes the download's own files | [0070](docs/adr/0070-one-search-live-downloads-remove-deletes.md) |
 | 9 | Opaque server-side sessions, not JWTs | See the header comment in `internal/identity/session.go` — immediate revocation is a hard requirement, and a self-contained token cannot do it without the database lookup a JWT exists to avoid |
 
 ### Defaults taken in the absence of an answer — override any of these

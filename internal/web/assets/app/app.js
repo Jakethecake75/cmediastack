@@ -20,9 +20,9 @@
   var me = null;
 
   /* Three sections (ADR-0069), each with its own tabs. A view's `perm` is the
-   * permission that reveals it, `unless` a permission that hides it (the
-   * requester's Search gives way to the editor's), and `group` heads a run of
-   * Settings tabs. A view with no perm is available to every account. */
+   * permission that reveals it, `anyPerm` permissions any one of which does,
+   * and `group` heads a run of Settings tabs. A view with neither is
+   * available to every account. */
   var SECTIONS = [
     { key: 'home', label: 'Home' },
     { key: 'request', label: 'Request' },
@@ -35,15 +35,11 @@
      * nothing chosen is an empty screen with no way forward. */
     { id: 'watch',     label: 'Watch',     section: 'home', perm: 'media.browse', hidden: true },
 
-    /* One place to find, add or ask for a title (ADR-0069). */
-    { id: 'add',       label: 'Search',    section: 'request', perm: 'library.edit' },
-    { id: 'ask',       label: 'Search',    section: 'request', perm: 'request.submit', unless: 'library.edit' },
-    /* What is popular, and a request beside each (ADR-0043). */
-    { id: 'discover',  label: 'Discover',  section: 'request', perm: 'media.browse' },
-    { id: 'requests',  label: 'Requests',  section: 'request', perm: 'request.submit' },
+    /* One place to find, add or ask for a title, search the indexers, and
+     * follow requests (ADR-0070). */
+    { id: 'find',      label: 'Search',    section: 'request', anyPerm: ['library.edit', 'request.submit', 'acquisition.search'] },
     { id: 'queue',     label: 'Downloads', section: 'request', perm: 'acquisition.queue' },
     { id: 'wanted',    label: 'Wanted',    section: 'request', perm: 'media.browse' },
-    { id: 'search',    label: 'Indexer search', section: 'request', perm: 'acquisition.search' },
 
     /* A checklist over the settings below, for a new instance (ADR-0065). */
     { id: 'start',     label: 'Getting started', section: 'settings', group: 'Setup', perm: 'admin.system' },
@@ -224,7 +220,7 @@
 
   function visibleViews() {
     return VIEWS.filter(function (v) {
-      return (!v.perm || can(v.perm)) && !(v.unless && can(v.unless));
+      return (!v.perm || can(v.perm)) && (!v.anyPerm || v.anyPerm.some(can));
     });
   }
 
@@ -274,13 +270,17 @@
     });
   }
 
+  /* Tabs merged into Search (ADR-0070); their old links open it. */
+  var MERGED = { add: 'find', ask: 'find', search: 'find', requests: 'find', discover: 'find' };
+
   function currentView() {
     var want = (window.location.hash || '').replace(/^#/, '');
+    want = MERGED[want] || want;
     var allowed = visibleViews();
     for (var i = 0; i < allowed.length; i++) {
       if (allowed[i].id === want) { return want; }
     }
-    /* Old links: Overview became Home, and Add's search is still Add. */
+    /* Old links: Overview became Home. */
     var first = navViews()[0];
     return first ? first.id : 'security';
   }
@@ -304,7 +304,7 @@
     $('error').hidden = true;
     /* Adding for a request lasts while the Add screen is open: leaving it is
      * leaving that errand, and the next visit to Add is an ordinary one. */
-    if (target !== 'add') { addingFor = null; }
+    if (target !== 'find') { addingFor = null; }
     if (loaders[target]) { loaders[target](); }
   }
 
@@ -342,9 +342,7 @@
   // Home (ADR-0069): rows of posters for watching
   // -------------------------------------------------------------------------
 
-  function tile(title, sub, poster, onOpen, progress) {
-    var t = el('button', 'tile');
-    t.type = 'button';
+  function posterArt(title, poster) {
     var art = el('div', 'poster');
     if (poster) {
       var img = document.createElement('img');
@@ -356,6 +354,13 @@
     } else {
       art.appendChild(el('div', 'poster-none', title));
     }
+    return art;
+  }
+
+  function tile(title, sub, poster, onOpen, progress) {
+    var t = el('button', 'tile');
+    t.type = 'button';
+    var art = posterArt(title, poster);
     if (progress > 0) {
       var bar = el('div', 'tile-progress');
       var fill = el('div', 'tile-progress-fill');
@@ -429,45 +434,6 @@
       }
     });
   };
-
-  // -------------------------------------------------------------------------
-  // Request's Search for an account that may only request (ADR-0069)
-  // -------------------------------------------------------------------------
-
-  loaders.ask = function () {
-    if (!$('ask-results').firstChild) {
-      empty($('ask-results'), 'Search for a film or a series, then ask for it.');
-    }
-  };
-
-  function wireAsk() {
-    var form = $('ask-form');
-    if (!form) { return; }
-    submit(form, function () {
-      var results = $('ask-results');
-      var kind = $('ask-kind').value === 'series' ? 'series' : 'movie';
-      empty(results, 'Searching…');
-      return api('GET', '/api/v1/requests/search?kind=' + kind + '&title=' + encodeURIComponent($('ask-term').value))
-        .then(function (res) {
-          if (res.status !== 200 || !res.body) { empty(results, ''); return fail(res, 'the search failed'); }
-          var matches = res.body.matches || [];
-          if (!matches.length) { return empty(results, 'Nothing by that name. You can still ask in words on the Requests tab.'); }
-          clear(results);
-          matches.forEach(function (m) {
-            var r = row(m.title + (m.year ? ' (' + m.year + ')' : ''), m.overview ? m.overview.slice(0, 220) : null);
-            actions(r).appendChild(button('Request', 'primary', function (b) {
-              b.disabled = true;
-              api('POST', '/api/v1/requests', { kind: kind, title: m.title, year: m.year || 0, note: '' }).then(function (rr) {
-                if (rr.status !== 201 && rr.status !== 200) { b.disabled = false; return fail(rr, 'could not record that request'); }
-                b.textContent = 'Requested';
-                ok((rr.body && rr.body.message) || 'Requested.');
-              });
-            }));
-            results.appendChild(r);
-          });
-        });
-    });
-  }
 
   // -------------------------------------------------------------------------
   // approvals
@@ -687,37 +653,7 @@
     return r;
   }
 
-  loaders.discover = function () {
-    var list = $('discover-list');
-    var section = $('discover-section').value;
-    empty(list, 'Loading…');
-    api('GET', '/api/v1/discover/' + section).then(function (res) {
-      if (res.status !== 200 || !res.body) { empty(list, failure(res, 'could not read that list')); return; }
-      if (!res.body.count) { empty(list, res.body.note || 'Nothing listed.'); return; }
-      clear(list);
-      res.body.items.forEach(function (m) {
-        var r = row(m.title + (m.year ? ' (' + m.year + ')' : ''), m.kind === 'series' ? 'series' : 'film');
-        if (m.in_library) { r.firstChild.appendChild(el('span', 'badge good', 'in the library')); }
-        if (m.requested) { r.firstChild.appendChild(el('span', 'badge warn', 'requested')); }
-        if (m.overview) { r.appendChild(el('div', 'muted small', m.overview)); }
-        if (!m.in_library && !m.requested && can('request.submit')) {
-          actions(r).appendChild(button('Request', 'primary', function (b) {
-            b.disabled = true;
-            var body = { kind: m.kind === 'series' ? 'series' : 'movie', title: m.title };
-            if (m.year) { body.year = m.year; }
-            api('POST', '/api/v1/requests', body).then(function (u) {
-              if (u.status !== 201 && u.status !== 200) { b.disabled = false; fail(u, 'could not request that'); return; }
-              ok((u.body && u.body.message) || 'Requested.');
-              loaders.discover();
-            });
-          }));
-        }
-        list.appendChild(r);
-      });
-    });
-  };
-
-  loaders.requests = function () {
+  function loadRequests() {
     loadIssues();
     var list = $('requests-list');
     empty(list, 'Loading…');
@@ -798,7 +734,7 @@
               b.disabled = false;
               if (r.status !== 200) { fail(r, 'could not approve that request'); return; }
               ok((r.body && r.body.message) || 'Approved.');
-              loaders.requests();
+              loadRequests();
             });
           }));
 
@@ -822,7 +758,7 @@
                 b.disabled = false;
                 if (r.status !== 200) { fail(r, 'could not deny that request'); return; }
                 ok('Denied. The requester can see the reason.');
-                loaders.requests();
+                loadRequests();
               });
           }));
         }
@@ -830,7 +766,7 @@
         list.appendChild(item);
       });
     });
-  };
+  }
 
   // -------------------------------------------------------------------------
   // accounts
@@ -1894,7 +1830,7 @@
         $('request-title').value = '';
         $('request-year').value = '';
         $('request-note').value = '';
-        loaders.requests();
+        loadRequests();
       });
     });
   }
@@ -2667,7 +2603,7 @@
     addingFor = { id: rq.id, kind: rq.kind === 'series' ? 'series' : 'movie',
       title: rq.title, year: rq.year || 0, asker: rq.requested_by || 'somebody',
       searched: false };
-    window.location.hash = '#add';
+    window.location.hash = '#find';
   }
 
   /* The line at the top of the Add screen that says it is adding for a
@@ -2739,25 +2675,70 @@
   /* Root folders by their kind — "series" or "movies" — read once per visit. */
   var addRoots = {};
 
-  loaders.add = function () {
+  /* Search (ADR-0070): one form for every kind of title the account may add
+   * or ask for and, for an account that may search them, the indexers. */
+  var FIND_KINDS = [
+    ['movie', 'Films', ['library.edit', 'request.submit']],
+    ['series', 'Series', ['library.edit', 'request.submit']],
+    ['artist', 'Music', ['library.edit']],
+    ['book', 'Books', ['library.edit']],
+    ['releases', 'Releases (indexers)', ['acquisition.search']]
+  ];
+
+  loaders.find = function () {
     /* Re-read on every visit: a root folder added under Storage a minute ago
      * should be offered without a reload. */
     addRoots = {};
+    var kind = $('find-kind');
+    if (!kind.options.length) {
+      FIND_KINDS.forEach(function (k) {
+        if (!k[2].some(can)) { return; }
+        var o = el('option', null, k[1]);
+        o.value = k[0];
+        kind.appendChild(o);
+      });
+      findMode();
+    }
+    $('find-requests').hidden = !can('request.submit');
+    if (can('request.submit')) { loadRequests(); }
     showAddingFor();
     if (addingFor && !addingFor.searched) {
       /* Search the provider for what the request says, once. The approver
        * chooses the match: the request is words, the item is the provider's. */
       addingFor.searched = true;
-      $('add-kind').value = addingFor.kind;
-      $('add-term').value = addingFor.title;
-      $('add-year').value = addingFor.year ? String(addingFor.year) : '';
-      $('add-form').requestSubmit();
+      kind.value = addingFor.kind;
+      findMode();
+      $('find-term').value = addingFor.title;
+      $('find-year').value = addingFor.year ? String(addingFor.year) : '';
+      $('find-form').requestSubmit();
       return;
     }
-    if (!$('add-results').firstChild) {
-      empty($('add-results'), 'Search the metadata provider for a series or a film to add.');
-    }
+    /* Release results carry Grab tickets that have been expiring while the
+     * tab was away, so they are not shown again as though current. */
+    if (kind.value === 'releases' || !$('find-results').firstChild) { resetFind(); }
   };
+
+  function findHint() {
+    var k = $('find-kind').value;
+    if (k === 'releases') { return 'Search for something to see what the indexers have.'; }
+    if (!can('library.edit')) { return 'Search for a film or a series, then ask for it.'; }
+    return 'Search for a ' + ({ movie: 'film', artist: 'artist', book: 'book' }[k] || 'series') + ' to add.';
+  }
+
+  function resetFind() {
+    $('find-detail').hidden = true;
+    clear($('search-indexers'));
+    $('search-warning').hidden = true;
+    empty($('find-results'), findHint());
+  }
+
+  /* findMode shows the fields the chosen kind uses. */
+  function findMode() {
+    var k = $('find-kind').value;
+    $('find-year-field').hidden = k !== 'movie' && k !== 'series';
+    $('find-profile-field').hidden = k !== 'releases';
+    $('search-default').hidden = k !== 'releases';
+  }
 
   function loadRootsOf(kind) {
     if (addRoots[kind]) { return Promise.resolve(addRoots[kind]); }
@@ -2770,33 +2751,84 @@
     });
   }
 
-  function wireAdd() {
-    /* A result row is added as the kind it was searched as, so results of the
-     * other kind are cleared rather than left under the wrong heading. */
-    $('add-kind').addEventListener('change', function () {
-      empty($('add-results'), 'Search the metadata provider for a ' +
-        ({ movie: 'film', artist: 'artist', book: 'book' }[$('add-kind').value] || 'series') + ' to add.');
-    });
-    submit($('add-form'), function () {
-      var results = $('add-results');
-      if ($('add-kind').value === 'artist') { return searchArtists(results); }
-      if ($('add-kind').value === 'book') { return searchBooks(results); }
-      var kind = $('add-kind').value === 'movie' ? 'movie' : 'series';
-      var q = '/api/v1/metadata/search?kind=' + kind + '&title=' +
-        encodeURIComponent($('add-term').value);
-      if ($('add-year').value) { q += '&year=' + encodeURIComponent($('add-year').value); }
+  function wireFind() {
+    $('find-kind').addEventListener('change', function () { findMode(); resetFind(); });
+    $('search-profile').addEventListener('change', showSearchDefault);
+    submit($('find-form'), function () {
+      var results = $('find-results');
+      var k = $('find-kind').value;
+      $('find-detail').hidden = true;
+      clear($('search-indexers'));
+      $('search-warning').hidden = true;
+      if (k === 'releases') { return searchReleases(results); }
+      if (k === 'artist') { return searchArtists(results); }
+      if (k === 'book') { return searchBooks(results); }
+      var kind = k === 'movie' ? 'movie' : 'series';
+      var q = (can('library.edit') ? '/api/v1/metadata/search' : '/api/v1/requests/search') +
+        '?kind=' + kind + '&title=' + encodeURIComponent($('find-term').value);
+      if ($('find-year').value) { q += '&year=' + encodeURIComponent($('find-year').value); }
       empty(results, 'Asking the provider…');
       return api('GET', q).then(function (res) {
-        if (res.status !== 200 || !res.body) {
-          empty(results, '');
-          return fail(res, 'the search failed');
-        }
+        if (res.status !== 200 || !res.body) { empty(results, ''); return fail(res, 'the search failed'); }
         var matches = res.body.matches || [];
-        if (!matches.length) { return empty(results, 'The provider has nothing by that name.'); }
+        if (!matches.length) {
+          return empty(results, can('library.edit') ? 'The provider has nothing by that name.'
+            : 'Nothing by that name. You can still ask for it in words below.');
+        }
         clear(results);
-        matches.forEach(function (m) { results.appendChild(addCandidate(m, kind)); });
+        var grid = el('div', 'poster-grid');
+        matches.forEach(function (m) {
+          var t = tile(m.title, m.year ? String(m.year) : '', m.poster, function () { chooseMatch(m, kind, t); });
+          grid.appendChild(t);
+        });
+        results.appendChild(grid);
       });
     });
+  }
+
+  /* chooseMatch opens a result above the posters: its poster, its overview,
+   * and Add or Request. */
+  function chooseMatch(m, kind, t) {
+    Array.prototype.forEach.call(t.parentNode.children, function (c) {
+      c.classList.toggle('chosen', c === t);
+    });
+    var box = $('find-detail');
+    clear(box);
+    var head = el('div', 'find-detail-head');
+    head.appendChild(posterArt(m.title, m.poster));
+    var text = el('div', 'find-detail-text');
+    text.appendChild(el('h3', null, m.title + (m.year ? ' (' + m.year + ')' : '')));
+    text.appendChild(el('div', 'muted small', (kind === 'movie' ? 'Film' : 'Series') +
+      (m.original_title ? ' · originally ' + m.original_title : '')));
+    if (m.overview) { text.appendChild(el('p', 'overview', m.overview)); }
+    var acts = el('div', 'actions');
+    text.appendChild(acts);
+    head.appendChild(text);
+    box.appendChild(head);
+    if (can('library.edit')) {
+      acts.appendChild(button('Add…', 'primary', function (b) {
+        b.disabled = true;
+        loadRootsOf(kind === 'movie' ? 'movies' : 'series').then(function (roots) {
+          box.appendChild(kind === 'movie' ? addFilmChoice(m, roots) : addChoice(m, roots));
+        });
+      }));
+    } else {
+      acts.appendChild(button('Request', 'primary', function (b) {
+        b.disabled = true;
+        api('POST', '/api/v1/requests', { kind: kind, title: m.title, year: m.year || 0, note: '' }).then(function (rr) {
+          if (rr.status !== 201 && rr.status !== 200) { b.disabled = false; return fail(rr, 'could not record that request'); }
+          b.textContent = 'Requested';
+          ok((rr.body && rr.body.message) || 'Requested.');
+          loadRequests();
+        });
+      }));
+    }
+    acts.appendChild(button('Close', 'ghost', function () {
+      box.hidden = true;
+      t.classList.remove('chosen');
+    }));
+    box.hidden = false;
+    box.scrollIntoView({ block: 'nearest' });
   }
 
   /* Artists come from MusicBrainz, not the film and series provider
@@ -2811,7 +2843,7 @@
 
   function searchArtists(results) {
     empty(results, 'Asking MusicBrainz…');
-    return api('GET', '/api/v1/music/artists?q=' + encodeURIComponent($('add-term').value)).then(function (res) {
+    return api('GET', '/api/v1/music/artists?q=' + encodeURIComponent($('find-term').value)).then(function (res) {
       if (res.status !== 200 || !res.body) { empty(results, ''); return fail(res, 'the search failed'); }
       if (!res.body.count) { return empty(results, 'MusicBrainz has no artist by that name.'); }
       clear(results);
@@ -2869,7 +2901,7 @@
    * means from a study guide of the same name. */
   function searchBooks(results) {
     empty(results, 'Asking Open Library…');
-    return api('GET', '/api/v1/books/search?q=' + encodeURIComponent($('add-term').value)).then(function (res) {
+    return api('GET', '/api/v1/books/search?q=' + encodeURIComponent($('find-term').value)).then(function (res) {
       if (res.status !== 200 || !res.body) { empty(results, ''); return fail(res, 'the search failed'); }
       if (!res.body.count) { return empty(results, 'Open Library has no book by that name.'); }
       clear(results);
@@ -2968,19 +3000,6 @@
         box.appendChild(r);
       });
     });
-  }
-
-  function addCandidate(m, kind) {
-    var r = row(m.title + (m.year ? ' (' + m.year + ')' : ''),
-      m.original_title ? 'originally ' + m.original_title : null);
-    if (m.overview) { r.appendChild(el('div', 'overview', m.overview)); }
-    actions(r).appendChild(button('Add…', 'ghost', function (b) {
-      b.disabled = true;
-      loadRootsOf(kind === 'movie' ? 'movies' : 'series').then(function (roots) {
-        r.appendChild(kind === 'movie' ? addFilmChoice(m, roots) : addChoice(m, roots));
-      });
-    }));
-    return r;
   }
 
   /* labelled builds a label and control pair with the label bound to it, so
@@ -3820,7 +3839,7 @@
           });
       }));
     }
-    box.hidden = false;
+    box.hidden = $('find-kind').value !== 'releases';
   }
 
   /* askAgain is the form under a targeted search's results: the term and the
@@ -4038,61 +4057,39 @@
     return targetedSearch('film', '/api/v1/media/' + itemID + '/search', label, after);
   }
 
-  /* Search has no data of its own to load, but it still needs a loader:
-   * without one, leaving the tab and coming back shows the PREVIOUS search's
-   * results as though they were current. That is the same class of mistake as a
-   * stale success banner — the screen says something true a minute ago and
-   * false now — and it is worse here, because the results carry Grab buttons
-   * whose tickets have been expiring the whole time. */
-  loaders.search = function () {
-    empty($('search-results'), 'Search for something to see what the indexers have.');
-    clear($('search-indexers'));
-    $('search-warning').hidden = true;
-  };
-
-  function wireSearch() {
-    $('search-profile').addEventListener('change', showSearchDefault);
-    submit($('search-form'), function () {
-      var results = $('search-results');
-      var indexers = $('search-indexers');
-      /* Always explicit: the select shows what will judge the results, and
-       * that is exactly what is sent — a profile's id, or 0 for none. */
-      var body = { term: $('search-term').value, profile_id: Number($('search-profile').value || 0) };
-
-      empty(results, 'Asking every enabled indexer…');
+  /* searchReleases asks every indexer at once (the Releases kind of Search).
+   * Results the quality profile refused are shown too, with the reason. */
+  function searchReleases(results) {
+    var indexers = $('search-indexers');
+    /* Always explicit: the select shows what will judge the results, and
+     * that is exactly what is sent — a profile's id, or 0 for none. */
+    var body = { term: $('find-term').value, profile_id: Number($('search-profile').value || 0) };
+    empty(results, 'Asking every enabled indexer…');
+    return api('POST', '/api/v1/releases/search', body).then(function (res) {
+      if (res.status !== 200 || !res.body) {
+        empty(results, '');
+        return fail(res, 'the search failed');
+      }
+      var b = res.body;
+      /* Partial results that LOOK complete are worse than an error: an
+       * operator who is not told three indexers timed out concludes the
+       * release does not exist. */
+      if (b.warning) {
+        $('search-warning').textContent = b.warning;
+        $('search-warning').hidden = false;
+      }
       clear(indexers);
-      $('search-warning').hidden = true;
-
-      return api('POST', '/api/v1/releases/search', body).then(function (res) {
-        if (res.status !== 200 || !res.body) {
-          empty(results, '');
-          return fail(res, 'the search failed');
-        }
-        var b = res.body;
-
-        /* Partial results that LOOK complete are worse than an error: an
-         * operator who is not told three indexers timed out concludes the
-         * release does not exist. */
-        if (b.warning) {
-          $('search-warning').textContent = b.warning;
-          $('search-warning').hidden = false;
-        }
-
-        clear(indexers);
-        (b.indexers || []).forEach(function (o) {
-          var r = row(o.indexer, o.error ? 'did not answer' : o.results + ' result(s)');
-          if (o.error) { r.className = 'item rejected'; r.appendChild(el('div', 'why', o.error)); }
-          indexers.appendChild(r);
-        });
-
-        var list = b.candidates || [];
-        if (!list.length) {
-          empty(results, 'No indexer returned anything for that.');
-          return;
-        }
-        clear(results);
-        list.forEach(function (c) { results.appendChild(renderCandidate(c)); });
+      (b.indexers || []).forEach(function (o) {
+        var r = row(o.indexer, o.error ? 'did not answer' : o.results + ' result(s)');
+        if (o.error) { r.className = 'item rejected'; r.appendChild(el('div', 'why', o.error)); }
+        indexers.appendChild(r);
       });
+      var list = b.candidates || [];
+      if (!list.length) { return empty(results, 'No indexer returned anything for that.'); }
+      clear(results);
+      var wrap = el('div', 'list');
+      list.forEach(function (c) { wrap.appendChild(renderCandidate(c)); });
+      results.appendChild(wrap);
     });
   }
 
@@ -4100,120 +4097,155 @@
   // queue
   // -------------------------------------------------------------------------
 
-  loaders.queue = function () {
-    api('GET', '/api/v1/queue').then(function (res) {
-      var list = $('queue-list');
-      var notes = $('queue-notes');
-      clear(notes);
+  /* Downloads is live (ADR-0070): re-read every two seconds while it is open
+   * and the window is visible. A row's figures change in place; the list is
+   * rebuilt only when what is in it changes, so an open History stays open. */
+  var queueTimer = null;
+  var queueBusy = false;
+  var queueShape = '';
+  var queueFiguresOf = {};
 
+  loaders.queue = function () {
+    readQueue(true);
+    if (queueTimer) { return; }
+    queueTimer = setInterval(function () {
+      if (currentView() !== 'queue') {
+        clearInterval(queueTimer);
+        queueTimer = null;
+        return;
+      }
+      if (!document.hidden) { readQueue(false); }
+    }, 2000);
+  };
+
+  function readQueue(rebuild) {
+    if (queueBusy) { return; }
+    queueBusy = true;
+    api('GET', '/api/v1/queue').then(function (res) {
+      queueBusy = false;
+      var list = $('queue-list');
       if (res.status === 501) {
+        queueShape = '';
         return empty(list, (res.body && res.body.error) || 'The download engine is not running.');
       }
-      if (res.status !== 200 || !res.body) { return fail(res, 'could not read the queue'); }
-
-      /* The engine's notes belong beside the queue, not in a log: "DHT is off,
-       * so magnets may never resolve" explains the stuck magnet above it. */
-      (res.body.notes || []).forEach(function (n) {
-        notes.appendChild(el('div', 'note', n));
-      });
-      /* Why a download sits at zero (ADR-0066): the library drops a failed
-       * peer connection silently, so the engine's count is the only witness. */
-      var c = res.body.connections;
-      if (c && c.attempted > 0) {
-        notes.appendChild(el('div', 'note' + (c.failed === c.attempted ? ' bad' : ''),
-          'Peer connections: ' + c.attempted + ' tried, ' + c.failed + ' failed' +
-          (c.last_error ? ' — last failure: ' + c.last_error + (c.last_error_at ? ' (' + when(c.last_error_at) + ')' : '') : '')));
+      if (res.status !== 200 || !res.body) {
+        /* A missed tick is not worth a banner; the next one tries again. */
+        return rebuild ? fail(res, 'could not read the queue') : undefined;
       }
-
       var items = res.body.items || [];
+      var shape = items.map(function (t) { return t.info_hash + ' ' + t.status + ' ' + t.have_metadata; }).join(',');
+      if (!rebuild && shape === queueShape) {
+        items.forEach(function (t) {
+          var old = queueFiguresOf[t.info_hash];
+          if (old && old.parentNode) {
+            var fresh = queueFigures(t);
+            old.parentNode.replaceChild(fresh, old);
+            queueFiguresOf[t.info_hash] = fresh;
+          }
+        });
+        return;
+      }
+      queueShape = shape;
+      queueFiguresOf = {};
       if (!items.length) { return empty(list, 'Nothing is downloading.'); }
-
       clear(list);
-      items.forEach(function (t) {
-        var r = row(t.title || t.name || t.info_hash, t.indexer);
-        r.className = 'item ' + (t.status === 'unrecorded' ? 'rejected' : '');
-
-        if (t.have_metadata) {
-          r.appendChild(progress(t.percent));
-        } else if (t.status === 'complete' || t.status === 'stopped') {
-          /* A row the engine is no longer running has no live progress to
-           * show. The magnet sentence below used to be shown for it too, and
-           * said a finished download was waiting for metadata. */
-          r.appendChild(el('div', 'muted small', t.status === 'complete'
-            ? 'Finished, and no longer running here.'
-            : 'Stopped. Its files, if any, are where they were.'));
-        } else {
-          r.appendChild(el('div', 'muted small',
-            'Waiting for metadata — a magnet has no size or progress until peers supply it.'));
-        }
-
-        r.appendChild(facts([
-          ['Status', t.status],
-          ['Done', t.have_metadata ? bytes(t.completed) + ' of ' + bytes(t.bytes) : undefined],
-          /* How it is doing (ADR-0068): a download at zero says whether it has
-           * no peers, peers that will not connect, or connections that send
-           * nothing. */
-          ['Peers', t.status === 'downloading' || t.status === 'seeding' || t.status === 'unrecorded'
-            ? t.connected + ' connected (' + t.seeders + ' seeding) · ' + t.connecting + ' connecting · ' +
-              t.waiting + ' waiting' : t.peers],
-          ['Received', t.received ? bytes(t.received) : undefined],
-          ['Speed', t.status === 'downloading' ? (t.rate ? bytes(t.rate) + '/s' : 'nothing arriving') : undefined],
-          /* No person pressed Grab for an automatic one (ADR-0030); said in
-           * words, not as the task's name. */
-          ['Added by', t.automatic ? 'automatic acquisition' : t.added_by],
-          ['Added', when(t.added_at)],
-          /* An episode or film grab is filed under its item whatever the
-           * release calls itself, so the queue says which that is, by name. */
-          ['For', t['for'] ? (t['for'].label || t['for'].code) : undefined]
-        ]));
-
-        /* A download that stopped moving (ADR-0034): automatic acquisition's
-         * was given up and what it was for is wanted again; a person's is
-         * left to them, so the sentence says what removing it would do. */
-        if (t.stalled) {
-          var quiet = 'No progress since ' + when(t.stalled.since) + '. ';
-          r.appendChild(el('div', 'why', t.stalled.given_up
-            ? quiet + 'Given up: it is never grabbed again, and what it was for is searched for afresh.'
-            : quiet + 'It is still running. Remove it to let another release be found.'));
-        }
-
-        if (t.status === 'unrecorded') {
-          r.appendChild(el('div', 'why',
-            'This transfer is running but was never written to the queue, so it ' +
-            'will disappear on the next restart with its files still on disk.'));
-        }
-
-        var a = actions(r);
-        a.appendChild(button('History', 'ghost', function (btn) {
-          btn.disabled = true;
-          api('GET', '/api/v1/queue/' + t.info_hash + '/history').then(function (h) {
-            btn.disabled = false;
-            if (h.status !== 200 || !h.body) { return fail(h, 'could not read the history'); }
-            var box = el('div', 'history');
-            if (!(h.body.history || []).length) {
-              box.appendChild(el('div', 'muted small', h.body.note || 'Nothing yet.'));
-            }
-            (h.body.history || []).forEach(function (rec) {
-              var line = el('div', 'history-line');
-              line.appendChild(el('span', 'badge ' + rec.outcome, rec.outcome));
-              line.appendChild(el('span', null, rec.detail));
-              box.appendChild(line);
-            });
-            r.appendChild(box);
-          });
-        }));
-        a.appendChild(button('Remove', 'danger', function (btn) {
-          btn.disabled = true;
-          api('POST', '/api/v1/queue/' + t.info_hash + '/remove').then(function (rm) {
-            if (rm.status !== 200) { btn.disabled = false; return fail(rm, 'could not remove'); }
-            ok((rm.body && rm.body.note) || 'Stopped.');
-            loaders.queue();
-          });
-        }));
-        list.appendChild(r);
-      });
+      items.forEach(function (t) { list.appendChild(queueRow(t)); });
     });
-  };
+  }
+
+  /* queueFigures is the part of a row that moves: progress and the facts. */
+  function queueFigures(t) {
+    var box = el('div', 'queue-figures');
+    if (t.have_metadata) {
+      box.appendChild(progress(t.percent));
+    } else if (t.status === 'complete') {
+      box.appendChild(el('div', 'muted small', 'Finished, and no longer running here.'));
+    } else {
+      box.appendChild(el('div', 'muted small',
+        'Waiting for metadata — a magnet has no size or progress until peers supply it.'));
+    }
+    var running = t.status === 'downloading' || t.status === 'seeding' || t.status === 'unrecorded';
+    box.appendChild(facts([
+      ['Status', t.status],
+      ['Done', t.have_metadata ? (t.completed ? bytes(t.completed) : '0 B') + ' of ' + bytes(t.bytes) + ' (' + Math.floor(t.percent || 0) + '%)' : undefined],
+      ['Speed', t.status === 'downloading' ? (t.rate ? bytes(t.rate) + '/s' : 'nothing arriving') : undefined],
+      /* How it is doing (ADR-0068): a download at zero says whether it has
+       * no peers, peers that will not connect, or connections that send
+       * nothing. */
+      ['Peers', running ? t.connected + ' connected (' + t.seeders + ' seeding) · ' + t.connecting +
+        ' connecting · ' + t.waiting + ' waiting' : undefined],
+      ['Received', t.received ? bytes(t.received) : undefined],
+      /* No person pressed Grab for an automatic one (ADR-0030); said in
+       * words, not as the task's name. */
+      ['Added by', t.automatic ? 'automatic acquisition' : t.added_by],
+      ['Added', when(t.added_at)],
+      /* An episode or film grab is filed under its item whatever the
+       * release calls itself, so the queue says which that is, by name. */
+      ['For', t['for'] ? (t['for'].label || t['for'].code) : undefined]
+    ]));
+    /* A person's download that stopped moving (ADR-0034) is left to them. */
+    if (t.stalled) {
+      box.appendChild(el('div', 'why', 'No progress since ' + when(t.stalled.since) +
+        '. Remove it to let another release be found.'));
+    }
+    if (t.status === 'unrecorded') {
+      box.appendChild(el('div', 'why',
+        'This transfer is running but was never written to the queue, so it ' +
+        'will disappear on the next restart with its files still on disk.'));
+    }
+    return box;
+  }
+
+  function queueRow(t) {
+    var r = row(t.title || t.name || t.info_hash, t.indexer);
+    r.className = 'item ' + (t.status === 'unrecorded' ? 'rejected' : '');
+    var figures = queueFigures(t);
+    queueFiguresOf[t.info_hash] = figures;
+    r.appendChild(figures);
+
+    var a = actions(r);
+    a.appendChild(button('History', 'ghost', function (btn) {
+      btn.disabled = true;
+      api('GET', '/api/v1/queue/' + t.info_hash + '/history').then(function (h) {
+        btn.disabled = false;
+        if (h.status !== 200 || !h.body) { return fail(h, 'could not read the history'); }
+        var box = el('div', 'history');
+        if (!(h.body.history || []).length) {
+          box.appendChild(el('div', 'muted small', h.body.note || 'Nothing yet.'));
+        }
+        (h.body.history || []).forEach(function (rec) {
+          var line = el('div', 'history-line');
+          line.appendChild(el('span', 'badge ' + rec.outcome, rec.outcome));
+          line.appendChild(el('span', null, rec.detail));
+          box.appendChild(line);
+        });
+        r.appendChild(box);
+      });
+    }));
+    /* Remove deletes the download's files (ADR-0070), so it asks again, on
+     * itself, and forgets the question after five seconds. */
+    var armed = null;
+    a.appendChild(button('Remove', 'danger', function (btn) {
+      if (!armed) {
+        btn.textContent = 'Click again to delete it and its files';
+        armed = setTimeout(function () { armed = null; btn.textContent = 'Remove'; }, 5000);
+        return;
+      }
+      clearTimeout(armed);
+      armed = null;
+      btn.disabled = true;
+      api('POST', '/api/v1/queue/' + t.info_hash + '/remove').then(function (rm) {
+        if (rm.status !== 200) {
+          btn.disabled = false;
+          btn.textContent = 'Remove';
+          return fail(rm, 'could not remove');
+        }
+        ok((rm.body && rm.body.note) || 'Removed.');
+        readQueue(true);
+      });
+    }));
+    return r;
+  }
 
   // -------------------------------------------------------------------------
   // storage: root folders and the trash
@@ -4963,21 +4995,18 @@
       wireCreateUserForm();
       wireLogs();
       if ($('issues-all')) { $('issues-all').addEventListener('change', loadIssues); }
-      if ($('discover-section')) { $('discover-section').addEventListener('change', loaders.discover); }
       wireTokenForm();
       wireSecurity();
       wireLibrary();
-      wireAdd();
+      wireFind();
       wireIdentify();
       wireWatch();
-      wireSearch();
       wireRootForm();
       wireIndexerForm();
       wireMetadataForm();
       wireProxyForm();
       wireNotifications();
       wireRequestForm();
-      wireAsk();
       wireAudit();
       if (can('acquisition.search')) { loadProfiles(); }
 

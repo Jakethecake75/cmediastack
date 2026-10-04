@@ -517,7 +517,10 @@ func (s *Store) RecordedPosterPath(ctx context.Context, provider string, provide
 	err := s.db.QueryRowContext(ctx, `
 		SELECT poster_path FROM media_identification_candidate
 		WHERE provider = ? AND provider_id = ? AND poster_path <> ''
-		LIMIT 1`, provider, providerID).Scan(&path)
+		UNION ALL
+		SELECT poster_path FROM offered_poster
+		WHERE provider = ? AND provider_id = ?
+		LIMIT 1`, provider, providerID, provider, providerID).Scan(&path)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrNotRecorded
 	}
@@ -525,4 +528,33 @@ func (s *Store) RecordedPosterPath(ctx context.Context, provider string, provide
 		return "", fmt.Errorf("identify: reading a candidate's poster: %w", err)
 	}
 	return path, nil
+}
+
+// OfferPosters records the posters a title search showed an account
+// (ADR-0070), by provider id, so the poster route may fetch and serve them.
+func (s *Store) OfferPosters(ctx context.Context, userID int64, provider string, posters map[int64]string) error {
+	now := ts(s.now())
+	for id, path := range posters {
+		if _, err := s.db.ExecContext(ctx, `
+			INSERT INTO offered_poster (user_id, provider, provider_id, poster_path, offered_at)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT (user_id, provider, provider_id)
+			DO UPDATE SET poster_path = excluded.poster_path, offered_at = excluded.offered_at`,
+			userID, provider, id, path, now); err != nil {
+			return fmt.Errorf("identify: recording an offered poster: %w", err)
+		}
+	}
+	return nil
+}
+
+// PosterOffered reports whether a search showed this account that poster.
+func (s *Store) PosterOffered(ctx context.Context, userID int64, provider string, providerID int64) (bool, error) {
+	var n int
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM offered_poster
+		WHERE user_id = ? AND provider = ? AND provider_id = ?`,
+		userID, provider, providerID).Scan(&n); err != nil {
+		return false, fmt.Errorf("identify: reading an offered poster: %w", err)
+	}
+	return n > 0, nil
 }

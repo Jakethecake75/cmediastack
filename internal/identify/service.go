@@ -457,3 +457,22 @@ func (svc *Service) CachePoster(ctx context.Context, provider string, providerID
 		Size: "w342", RemotePath: remote,
 	})
 }
+
+// OfferPosters records the posters a title search showed the caller
+// (ADR-0070). The search itself checked what the caller may do.
+func (svc *Service) OfferPosters(ctx context.Context, provider string, posters map[int64]string) error {
+	if err := authz.RequirePermission(ctx, authz.PermBrowse); err != nil {
+		return err
+	}
+	return svc.store.OfferPosters(ctx, authz.FromContext(ctx).UserID, provider, posters)
+}
+
+// PosterOffered reports whether a title search showed the caller that poster.
+func (svc *Service) PosterOffered(ctx context.Context, provider string, providerID int64) bool {
+	p := authz.FromContext(ctx)
+	if p == nil {
+		return false
+	}
+	ok, err := svc.store.PosterOffered(ctx, p.UserID, provider, providerID)
+	return err == nil && ok
+}

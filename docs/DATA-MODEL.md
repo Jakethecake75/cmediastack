@@ -4,7 +4,7 @@
 Run `go generate ./internal/docs/` after adding a migration;
 `docs.TestTheGeneratedDocumentsAreCurrent` fails while this file is stale.
 
-37 migrations applied ([1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37]). SQLite with `foreign_keys=ON` and WAL (ADR-0004) — the declared references below are enforced, not decorative.
+38 migrations applied ([1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38]). SQLite with `foreign_keys=ON` and WAL (ADR-0004) — the declared references below are enforced, not decorative.
 
 ## `account_request`
 
@@ -579,6 +579,22 @@ against this table, and it is a JSON scan of every row in the other design. The 
 | `is_default` | integer | **no** | `0` | — |
 
 Indexes: `idx_media_stream_file`, `idx_media_stream_playability`
+
+## `offered_poster`
+
+*Migration 0038.*
+
+The posters a title search showed an account (ADR-0070). The poster route fetches only paths this instance recorded, and serves an account that may not edit the library only a poster it can see or was itself offered here.
+
+| Column | Type | Null | Default | Key |
+|---|---|---|---|---|
+| `user_id` | integer | **no** | — | PK, → `app_user.id (cascade)` |
+| `provider` | text | **no** | — | PK |
+| `provider_id` | integer | **no** | — | PK |
+| `poster_path` | text | **no** | — | — |
+| `offered_at` | text | **no** | — | — |
+
+Indexes: `idx_offered_poster_id`
 
 ## `password_reset`
 

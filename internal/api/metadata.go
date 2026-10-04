@@ -218,6 +218,18 @@ func (h *Handlers) searchMetadataWith(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	// The posters are recorded against the caller so the poster route will
+	// fetch and serve them (ADR-0070); when that fails the results simply
+	// have none.
+	posters := map[int64]string{}
+	for _, m := range matches {
+		if m.PosterPath != "" {
+			posters[m.ProviderID] = m.PosterPath
+		}
+	}
+	offered := len(posters) > 0 && h.identify != nil &&
+		h.identify.OfferPosters(r.Context(), "tmdb", posters) == nil
+
 	out := make([]map[string]any, 0, len(matches))
 	for _, m := range matches {
 		row := map[string]any{
@@ -236,6 +248,9 @@ func (h *Handlers) searchMetadataWith(w http.ResponseWriter, r *http.Request,
 		}
 		if m.PosterPath != "" {
 			row["poster_path"] = m.PosterPath
+			if offered {
+				row["poster"] = "/api/v1/artwork/poster/tmdb/" + strconv.FormatInt(m.ProviderID, 10)
+			}
 		}
 		out = append(out, row)
 	}

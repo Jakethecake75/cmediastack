@@ -19,20 +19,69 @@
       <div id="home-rows"></div>
     </section>
 
-    <section class="view" data-view="ask" hidden>
-      <h2>Find something to ask for</h2>
-      <form id="ask-form" class="inline-form" autocomplete="off">
-        <label for="ask-kind">Kind</label>
-        <select id="ask-kind">
-          <option value="movie">Film</option>
-          <option value="series">Series</option>
-        </select>
-        <label for="ask-term">Title</label>
-        <input id="ask-term" type="text" maxlength="200" required>
+    <section class="view" data-view="find" hidden>
+      <div id="add-for" class="inline-note" hidden></div>
+      <form id="find-form" class="find-bar" autocomplete="off">
+        <div class="find-field">
+          <label for="find-kind">Find</label>
+          <select id="find-kind"></select>
+        </div>
+        <div class="find-field find-term">
+          <label for="find-term">Title</label>
+          <input id="find-term" type="search" required maxlength="200" placeholder="Search for a title">
+        </div>
+        <div class="find-field" id="find-year-field">
+          <label for="find-year">Year</label>
+          <input id="find-year" type="number" min="1888" max="2100" placeholder="any">
+        </div>
+        <div class="find-field" id="find-profile-field" hidden>
+          <label for="search-profile">Judged by</label>
+          <select id="search-profile"></select>
+        </div>
         <button type="submit" class="primary">Search</button>
       </form>
-      <div id="ask-results" class="list"></div>
-      <p class="hint">Not here? Ask for it in words on the Requests tab.</p>
+      <div id="search-default" class="inline-note" hidden></div>
+      <p id="search-warning" class="warn" hidden role="status"></p>
+      <div id="search-indexers" class="list compact"></div>
+      <div id="find-detail" class="find-detail" hidden></div>
+      <div id="find-results"></div>
+
+      <div id="find-requests" hidden>
+        <h3>Requests</h3>
+        <p class="hint" id="request-scope"></p>
+        <div id="requests-list" class="list"></div>
+        <details class="ask-words">
+        <summary>Not found? Ask for it in words</summary>
+        <form id="request-form" class="inline-form" autocomplete="off">
+
+          <label for="request-kind">Kind</label>
+          <select id="request-kind" name="kind" required>
+            <option value="movie">Film</option>
+            <option value="series">Series</option>
+          </select>
+
+          <label for="request-title">Title</label>
+          <input id="request-title" name="title" type="text" maxlength="200" required>
+
+          <label for="request-year">Year (optional, but it helps)</label>
+          <input id="request-year" name="year" type="number" min="1888" max="2100">
+
+          <label for="request-note">Note</label>
+          <input id="request-note" name="note" type="text" maxlength="500">
+
+          <button type="submit" class="primary">Request it</button>
+        </form>
+        </details>
+
+        <h3>Problems reported</h3>
+        <p class="hint">
+          Something wrong with a title in the library — the sound, the subtitles,
+          the wrong film — is reported from its page. Yours are here, with the
+          answer when there is one.
+        </p>
+        <label class="checkbox"><input id="issues-all" type="checkbox"> Show resolved ones too</label>
+        <div id="issues-list" class="list"></div>
+      </div>
     </section>
 
     <section class="view" data-view="library" hidden>
@@ -51,36 +100,6 @@
       </div>
       <div id="library-list" class="list"></div>
       <div id="library-detail" class="detail" hidden></div>
-    </section>
-
-    <section class="view" data-view="add" hidden>
-      <h2>Find a title</h2>
-      <p class="hint">
-        Choose a series or a film from the metadata provider. Nothing is
-        downloaded and nothing is created on disk: its folder appears with the
-        first file imported into it. A series is added with every episode the
-        provider lists, and the ones you choose to want go on the Wanted list;
-        a film goes on the Wanted list itself. Each is then searched for from
-        its page or from Wanted, and whatever is grabbed there is filed under
-        it, whatever the release calls itself.
-      </p>
-      <div id="add-for" class="inline-note" hidden></div>
-      <form id="add-form" class="inline-form" autocomplete="off">
-        <label for="add-kind">Kind</label>
-        <select id="add-kind">
-          <option value="series">Series</option>
-          <option value="movie">Film</option>
-          <option value="artist">Artist (music)</option>
-          <option value="book">Book</option>
-        </select>
-        <label for="add-term">Title</label>
-        <input id="add-term" name="title" type="text" required maxlength="200"
-               placeholder="Title">
-        <label for="add-year">Year (optional)</label>
-        <input id="add-year" name="year" type="number" min="1900" max="2100">
-        <button type="submit" class="primary">Search the provider</button>
-      </form>
-      <div id="add-results" class="list"></div>
     </section>
 
     <section class="view" data-view="watch" hidden>
@@ -109,32 +128,8 @@
       <div id="identify-list" class="list"></div>
     </section>
 
-    <section class="view" data-view="search" hidden>
-      <h2>Search</h2>
-      <p class="hint">
-        Every indexer is asked at once. Results the quality profile refused are
-        shown too, with the reason — &ldquo;why did it not grab anything&rdquo;
-        is the question this kind of software is worst at answering.
-      </p>
-      <form id="search-form" class="inline-form" autocomplete="off">
-        <label for="search-term">Title</label>
-        <input id="search-term" name="term" type="text" required maxlength="200"
-               placeholder="what to look for">
-
-        <label for="search-profile">Judged by</label>
-        <select id="search-profile" name="profile_id"></select>
-
-        <button type="submit" class="primary">Search</button>
-      </form>
-      <div id="search-default" class="inline-note" hidden></div>
-      <p id="search-warning" class="warn" hidden role="status"></p>
-      <div id="search-indexers" class="list compact"></div>
-      <div id="search-results" class="list"></div>
-    </section>
-
     <section class="view" data-view="queue" hidden>
-      <h2>Queue</h2>
-      <div id="queue-notes" class="list compact"></div>
+      <h2>Downloads</h2>
       <div id="queue-list" class="list"></div>
     </section>
 
@@ -356,57 +351,6 @@
         Music comes from MusicBrainz and books from Open Library. Neither needs
         an account or a key.
       </p>
-    </section>
-
-    <section class="view" data-view="discover" hidden>
-      <h2>Discover</h2>
-      <p class="hint">
-        What is popular, from the metadata provider — the same for everybody,
-        refreshed every six hours. Ask for anything that is not here yet.
-      </p>
-      <label for="discover-section">Show</label>
-      <select id="discover-section">
-        <option value="trending">Trending this week</option>
-        <option value="popular-films">Popular films</option>
-        <option value="popular-series">Popular series</option>
-        <option value="upcoming-films">Films coming out</option>
-      </select>
-      <div id="discover-list" class="list"></div>
-    </section>
-
-    <section class="view" data-view="requests" hidden>
-      <h2>Requests</h2>
-      <form id="request-form" class="inline-form" autocomplete="off">
-        <h3>Ask for something</h3>
-
-        <label for="request-kind">Kind</label>
-        <select id="request-kind" name="kind" required>
-          <option value="movie">Film</option>
-          <option value="series">Series</option>
-        </select>
-
-        <label for="request-title">Title</label>
-        <input id="request-title" name="title" type="text" maxlength="200" required>
-
-        <label for="request-year">Year (optional, but it helps)</label>
-        <input id="request-year" name="year" type="number" min="1888" max="2100">
-
-        <label for="request-note">Note</label>
-        <input id="request-note" name="note" type="text" maxlength="500">
-
-        <button type="submit" class="primary">Request it</button>
-      </form>
-      <p class="hint" id="request-scope"></p>
-      <div id="requests-list" class="list"></div>
-
-      <h3>Problems reported</h3>
-      <p class="hint">
-        Something wrong with a title in the library — the sound, the subtitles,
-        the wrong film — is reported from its page. Yours are here, with the
-        answer when there is one.
-      </p>
-      <label class="checkbox"><input id="issues-all" type="checkbox"> Show resolved ones too</label>
-      <div id="issues-list" class="list"></div>
     </section>
 
     <section class="view" data-view="users" hidden>

@@ -173,12 +173,17 @@ func (h *Handlers) Queue(w http.ResponseWriter, r *http.Request) {
 		items = append(items, item)
 	}
 
-	// Rows the engine is not running. A completed or stopped transfer belongs
-	// in the queue view: "what has this instance acquired" is a question the
-	// operator is answerable for, and a list that shows only what is in flight
-	// cannot answer it.
+	// Rows the engine is not running. A completed transfer belongs in the
+	// queue view: "what has this instance acquired" is a question the operator
+	// is answerable for, and a list that shows only what is in flight cannot
+	// answer it.
 	for _, rec := range records {
 		if _, running := live[rec.InfoHash]; running {
+			continue
+		}
+		// Removed (ADR-0070): the row stays as the blocklist, not as a line
+		// here.
+		if rec.Status == download.StatusStopped {
 			continue
 		}
 		added := rec.AddedAt
@@ -234,7 +239,7 @@ func (h *Handlers) QueueRemove(w http.ResponseWriter, r *http.Request) {
 			TargetID:    hash,
 			SourceIP:    ClientIP(r.Context()),
 			UserAgent:   r.UserAgent(),
-			Detail:      "the transfer was stopped; files on disk were not touched",
+			Detail:      "the transfer was stopped and its downloaded files deleted",
 		})
 	}
 
@@ -244,10 +249,10 @@ func (h *Handlers) QueueRemove(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, download.ErrEngineClosed):
 		writeProblem(w, http.StatusServiceUnavailable, "the download engine is shutting down")
 	case err != nil:
-		writeProblem(w, http.StatusInternalServerError, "could not stop the transfer")
+		writeProblem(w, http.StatusInternalServerError, "could not remove the transfer")
 	default:
-		note := "The transfer was stopped. Any bytes already written are still on disk: " +
-			"deleting them is a separate permission."
+		note := "Removed, and its downloaded files deleted. Anything already imported " +
+			"into the library keeps its file."
 		if h.acquisition != nil {
 			// The queue is automatic acquisition's blocklist (ADR-0030,
 			// decision 8). Said here, because the obvious reading of "remove"

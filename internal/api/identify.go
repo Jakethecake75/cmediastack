@@ -29,6 +29,10 @@ type IdentifyService interface {
 	// recorded. The handler passes a provider and an id and nothing else: the
 	// URL is reconstructed from stored data, never from the request.
 	CachePoster(ctx context.Context, provider string, providerID int64) (string, error)
+	// OfferPosters records the posters a title search showed the caller, and
+	// PosterOffered asks whether one was (ADR-0070).
+	OfferPosters(ctx context.Context, provider string, posters map[int64]string) error
+	PosterOffered(ctx context.Context, provider string, providerID int64) bool
 }
 
 // ArtworkReader opens a cached image. Satisfied by *library.Cache.
@@ -312,11 +316,12 @@ func (h *Handlers) Poster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Somebody who may not edit the library — who never uses the screens that
-	// show search candidates — sees a poster only for a title they can see
-	// (ADR-0037), so a poster is not a way to learn what else is held.
+	// Somebody who may not edit the library sees a poster only for a title
+	// they can see (ADR-0037) or one their own search showed them (ADR-0070),
+	// so a poster is not a way to learn what else is held.
 	if p := authz.FromContext(r.Context()); p == nil || !p.Has(authz.PermEditLibraryItems) {
-		if h.media == nil || provider != "tmdb" || !h.posterVisible(r, id) {
+		offered := h.identify != nil && h.identify.PosterOffered(r.Context(), provider, id)
+		if !offered && (h.media == nil || provider != "tmdb" || !h.posterVisible(r, id)) {
 			writeProblem(w, http.StatusNotFound, "no artwork has been cached for that title")
 			return
 		}

@@ -240,7 +240,8 @@ func (h *Handlers) RestoreFromTrash(w http.ResponseWriter, r *http.Request) {
 
 // stopDownloadsFor stops every queued transfer aimed at a deleted title
 // (ADR-0066): a stopped transfer is never imported, so nothing it grabbed can
-// be filed against whatever title comes next. Its files stay where they are.
+// be filed against whatever title comes next. Its downloaded files are deleted
+// with it (ADR-0070).
 func (h *Handlers) stopDownloadsFor(r *http.Request, itemID int64) int {
 	if h.downloads == nil {
 		return 0

@@ -45,12 +45,12 @@ the figures below are counted from the tree.
 |---|---|
 | Application code | ~47,700 lines of Go, and ~5,800 of hand-written HTML, CSS and JavaScript |
 | Tests | ~46,000 lines |
-| Test functions | 1,481 |
-| Migrations | 37 |
+| Test functions | 1,485 |
+| Migrations | 38 |
 | HTTP routes | 153 (15 anonymous; none answer 501) |
-| Decision records | 69 (numbered 0001–0069, 0009 unwritten, 0003a) |
+| Decision records | 70 (numbered 0001–0070, 0009 unwritten, 0003a) |
 
-*Counted 2026-10-04, at increment 7f. At 4y it was 1,258 tests, 129 routes and 33 records; at 4u it was 1,143 tests, 122 routes and
+*Counted 2026-10-04, at increment 7g. At 4y it was 1,258 tests, 129 routes and 33 records; at 4u it was 1,143 tests, 122 routes and
 29 records. Before that, the figures — 679 tests, 103
 routes, 19 records, "Phases 4–5 not started" — were left standing for a whole
 phase after they stopped being true, which is the failure this section exists to
@@ -95,7 +95,7 @@ Roughly: **every item of the stated scope is built.** What is left is the
 list of known gaps in [DROPPED-FEATURES.md](DROPPED-FEATURES.md) — subtitle
 fetching, Cardigann indexer definitions, multi-season packs, master-key
 rotation and the rest, each with the reason it was not done, now being worked
-through as Phase 6 (6a: the breach check and signup proof-of-work; 6b: the source offer; 6c: deleting one file, purging now; 6d: rotating the master key; 6e: fetching a subtitle; 6f: the subtitle sweep; 6g: packs of several seasons; 6h: Cardigann definitions; 6i: signing in to them; 6j: the details page; 6k: following new seasons; 6l: album upgrades; 6m: season folders; 6n: daily series; and Phase 7, 7a: a SOCKS5 proxy from the web; 7b: v0.1.1; 7c: v0.1.2; 7d: v0.1.3; 7e: v0.2.0; 7f: v0.2.1) — and the time
+through as Phase 6 (6a: the breach check and signup proof-of-work; 6b: the source offer; 6c: deleting one file, purging now; 6d: rotating the master key; 6e: fetching a subtitle; 6f: the subtitle sweep; 6g: packs of several seasons; 6h: Cardigann definitions; 6i: signing in to them; 6j: the details page; 6k: following new seasons; 6l: album upgrades; 6m: season folders; 6n: daily series; and Phase 7, 7a: a SOCKS5 proxy from the web; 7b: v0.1.1; 7c: v0.1.2; 7d: v0.1.3; 7e: v0.2.0; 7f: v0.2.1; 7g: v0.3.0) — and the time
 review and use take, which the next section is about.
 
 ### Has the estimate held?

@@ -199,7 +199,7 @@ func TestTheQueueSaysWhichDownloadsAreAutomatic(t *testing.T) {
 		// A label alone is not enough: a person called "system:acquire" is a
 		// person.
 		{InfoHash: hashFor("c"), Title: "Heat.1995.1080p.BluRay.x264-GRP", AddedBy: &person,
-			AddedLabel: acquire.Label, Status: download.StatusStopped},
+			AddedLabel: acquire.Label, Status: download.StatusComplete},
 	}, items: []download.Transfer{{InfoHash: hashFor("a")}}}
 	h := &Handlers{downloads: eng}
 

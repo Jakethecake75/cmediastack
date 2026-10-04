@@ -53,9 +53,9 @@ Until a SOCKS5 proxy is set on the Network tab, downloads leave by the
 container's own address. With one set (ADR-0065: your password and an
 authenticator code, then *Restart now*), the ticked traffic goes through it or
 nowhere. NordVPN's proxy does not relay UDP, so each UDP tracker is asked over
-HTTP at the same address instead (the notes on Request → Downloads say which);
-DHT and uTP stay off. Each download there shows its peers connected, connecting
-and waiting, and its speed.
+HTTP at the same address instead (the `notes` of `GET /api/v1/queue` say
+which); DHT and uTP stay off. Each download on Request → Downloads shows its
+peers connected, connecting and waiting, and its speed, as they change.
 
 **Its address.** The certificate and base URL name the container's address.
 Give the container a fixed address or a DHCP reservation; if it changes, run the
