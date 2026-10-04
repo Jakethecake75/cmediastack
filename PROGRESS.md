@@ -53,7 +53,7 @@ Phase 6 stops at 6n (2026-10-03): the owner deferred audiobooks and anime's
 absolute numbering, to be added if they are needed.
 Phase 7 is the Proxmox deployment: 7a sets a SOCKS5 proxy from the web and adds
 Getting started, with the install scripts and v0.1.0; 7b (v0.1.1) fixes what the
-first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added, and 7i (v0.4.1) plays in a full-window player that keeps up.
+first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added, and 7i (v0.4.1, v0.4.2) plays in a full-window player that keeps up.
 **Scope change, 2026-09-26:** the operator is starting a new library rather than
 migrating one. Migrating from Sonarr is dropped; the Radarr importer (4g) stays,
 and does nothing unless a Radarr database is placed in its directory
@@ -5514,6 +5514,18 @@ arrow key jumped 10 s, space paused and resumed (also after a menu), m muted,
 1.5x applied, and the controls hid after 3 s. Back returned to the library and
 no ffmpeg was left running. At phone width the menus open below the top bar.
 Screenshots: `Claude outputs/7i-*.png`.
+
+**v0.4.2.** On the operator's own server, in their Chrome, v0.4.1 still
+stalled with Project Hail Mary on the copy path, every 10.4 s at the same film
+positions (20.8, 31.1, 41.6 s), while a direct fetch of the same stream ran at
+75 Mb/s against the film's 32.5 Mb/s. The encode's keyframes are 10.4 s apart,
+and one MP4 fragment per keyframe made each fragment about 42 MB, which Chrome
+fetched only when it needed it. Fragments are now capped at one second
+(`-frag_duration 1000000`, ADR-0072 §3a), checked by
+`playback.TestABrowserThatDecodesHEVCGetsTheOriginalPicture` (mutation-verified)
+and by measuring the output with Debian 12's ffmpeg: 21 fragments for 20 s,
+largest 12.1 MB. Over TLS (HTTP/2) in Chrome, the copied 4K stream played,
+and leaving freed the conversion within 50 ms.
 
 ---
 

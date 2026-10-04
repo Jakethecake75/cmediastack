@@ -219,6 +219,10 @@ func convertArgs(plan RemuxPlan, encoder string, opts StreamOptions) []string {
 		// The flags that make an MP4 writable to a pipe: no final seek back to
 		// patch the header, and a moov that is valid before the file ends.
 		"-movflags", "frag_keyframe+empty_moov+default_base_moof",
+		// A fragment at most a second long, not one per keyframe: a copied
+		// UHD film can have a keyframe every ten seconds, a 40 MB fragment
+		// the browser starts fetching only when it is needed (ADR-0072).
+		"-frag_duration", "1000000",
 		"-f", "mp4",
 		"pipe:1",
 	)

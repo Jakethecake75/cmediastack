@@ -187,6 +187,10 @@ func TestABrowserThatDecodesHEVCGetsTheOriginalPicture(t *testing.T) {
 	if argAfter(args, "-c:v") != "copy" || argAfter(args, "-tag:v") != "hvc1" || slices.Contains(args, "-vf") {
 		t.Errorf("not a tagged copy: %v", args)
 	}
+	// One fragment per keyframe would be ten seconds of UHD at a time.
+	if argAfter(args, "-frag_duration") != "1000000" {
+		t.Errorf("fragments are not capped at a second: %v", args)
+	}
 	if h264 := convertArgs(RemuxPlan{Possible: true, VideoCodec: "h264", AudioIndex: -1}, "aac", StreamOptions{}); slices.Contains(h264, "-tag:v") {
 		t.Errorf("H.264 was given an HEVC tag: %v", h264)
 	}

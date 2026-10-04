@@ -95,7 +95,7 @@ Roughly: **every item of the stated scope is built.** What is left is the
 list of known gaps in [DROPPED-FEATURES.md](DROPPED-FEATURES.md) — subtitle
 fetching, Cardigann indexer definitions, multi-season packs, master-key
 rotation and the rest, each with the reason it was not done, now being worked
-through as Phase 6 (6a: the breach check and signup proof-of-work; 6b: the source offer; 6c: deleting one file, purging now; 6d: rotating the master key; 6e: fetching a subtitle; 6f: the subtitle sweep; 6g: packs of several seasons; 6h: Cardigann definitions; 6i: signing in to them; 6j: the details page; 6k: following new seasons; 6l: album upgrades; 6m: season folders; 6n: daily series; and Phase 7, 7a: a SOCKS5 proxy from the web; 7b: v0.1.1; 7c: v0.1.2; 7d: v0.1.3; 7e: v0.2.0; 7f: v0.2.1; 7g: v0.3.0; 7h: v0.4.0; 7i: v0.4.1) — and the time
+through as Phase 6 (6a: the breach check and signup proof-of-work; 6b: the source offer; 6c: deleting one file, purging now; 6d: rotating the master key; 6e: fetching a subtitle; 6f: the subtitle sweep; 6g: packs of several seasons; 6h: Cardigann definitions; 6i: signing in to them; 6j: the details page; 6k: following new seasons; 6l: album upgrades; 6m: season folders; 6n: daily series; and Phase 7, 7a: a SOCKS5 proxy from the web; 7b: v0.1.1; 7c: v0.1.2; 7d: v0.1.3; 7e: v0.2.0; 7f: v0.2.1; 7g: v0.3.0; 7h: v0.4.0; 7i: v0.4.1, v0.4.2) — and the time
 review and use take, which the next section is about.
 
 ### Has the estimate held?

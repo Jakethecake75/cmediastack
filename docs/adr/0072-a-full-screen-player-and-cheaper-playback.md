@@ -66,6 +66,22 @@ stalling the picture. Conversions are already limited (2 by default), so this
 is at most 128 MiB. If the viewer goes away, ffmpeg is stopped and what it had
 written is discarded.
 
+### 3a. Fragments of a second (v0.4.2)
+
+v0.4.1 still stalled on the operator's server, on the copy path with no
+transcode at all: every 10.4 seconds, at the same points in the film. The UHD
+encode has a keyframe every 10.4 s, and ffmpeg cut one MP4 fragment per
+keyframe (`frag_keyframe`): about 42 MB each, which ffmpeg can only send
+whole. Chrome starts fetching the next fragment shortly before it is needed,
+and at the 65–75 Mb/s the server delivered on that network, 42 MB takes about
+5 seconds. On localhost it took well under a second, which is why the local
+checks did not show it.
+
+Every conversion now passes `-frag_duration 1000000`: a fragment is cut at a
+keyframe or after one second, whichever comes first. The same 40 seconds went
+from 5 fragments (largest 53 MB) to 43 (mean 4.9 MB). Chrome plays fragments
+that do not start on a keyframe.
+
 ### 4. A stall waits for a buffer
 
 A stream that is barely keeping up stalls, plays half a second, and stalls
