@@ -3,7 +3,7 @@
 Hand this file to a new session to resume. It is the authoritative statement of
 what exists.
 
-**Last updated:** 2026-10-04
+**Last updated:** 2026-10-05
 **Current phase:** 5 (Music and books) — Phase 4's increments 4a–4z and 4aa–4ai complete, and 5a–5g: Phase 5 is complete. Phase 6 works through the known gaps: 6a–6n. Eight of them are
 library and acquisition work done while Phase 4 was open: 4g (migrating from
 Radarr), 4k (episode tracking), 4l (searching for a wanted episode), 4m
@@ -53,7 +53,7 @@ Phase 6 stops at 6n (2026-10-03): the owner deferred audiobooks and anime's
 absolute numbering, to be added if they are needed.
 Phase 7 is the Proxmox deployment: 7a sets a SOCKS5 proxy from the web and adds
 Getting started, with the install scripts and v0.1.0; 7b (v0.1.1) fixes what the
-first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added, 7i (v0.4.1, v0.4.2) plays in a full-window player that keeps up, 7j (v0.4.3) lets the player load its own stream, keeps downloads across a restart and casts, and 7k (v0.4.4) keeps the sound in step, reads subtitles out of a film once, and always shows the cast button.
+first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added, 7i (v0.4.1, v0.4.2) plays in a full-window player that keeps up, 7j (v0.4.3) lets the player load its own stream, keeps downloads across a restart and casts, 7k (v0.4.4) keeps the sound in step, reads subtitles out of a film once, and always shows the cast button, and 7l (v0.5.0) adds an approved request to the library by itself, lets a request name seasons or episodes, lets a User ask for a removal, keeps one copy of a file imported across filesystems, and casts from the player to a Chromecast.
 **Scope change, 2026-09-26:** the operator is starting a new library rather than
 migrating one. Migrating from Sonarr is dropped; the Radarr importer (4g) stays,
 and does nothing unless a Radarr database is placed in its directory
@@ -66,9 +66,9 @@ and does nothing unless a Radarr database is placed in its directory
 | | |
 |---|---|
 | Go packages | 38 |
-| Tests | 1498, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Tests | 1508, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached (run again at 6l, after 6h made `golang.org/x/net/html` reached code). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
-| Routes registered | 153 (15 anonymous, 51 admin-hidden, 19 session-only). **0 of 153 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
+| Routes registered | 157 (17 anonymous, 51 admin-hidden, 19 session-only). **0 of 157 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
 | **Can you log in?** | **Yes, in a browser.** First run → wizard → login → authenticator enrollment → working session |
 | **Is there a UI?** | **Yes.** No build step, no third-party frontend code |
@@ -5609,6 +5609,52 @@ after 15 s and loaded 18 cues; the cast button showed.
 
 ---
 
+### Increment 7l (v0.5.0) — requests that add themselves, removals, one copy, casting ✅
+
+Asked for after v0.4.4: Add to library did nothing after approval and should
+not be needed; Users should be able to ask for removals; a series request
+should name seasons or episodes; Downloads jumped around; Search needed a
+Clear; dark mode should be a switch; an imported file was on disk twice, one
+seeding and one playing; and Cast should cast from the player, not the tab.
+[ADR-0075](docs/adr/0075-requests-add-themselves-seasons-removals.md),
+[ADR-0076](docs/adr/0076-one-copy-seeded-from-the-library.md) and
+[ADR-0077](docs/adr/0077-casting-to-a-chromecast.md) were written first.
+
+**What was found.** *Add to library* set the address to `#find`, which it
+already was (the requests list is on Search), so nothing loaded. The engine
+lists torrents in map order, different on every read, so Downloads rebuilt
+every two seconds. The second copy came from the importer's copy fallback
+across filesystems. Cast used the Remote Playback API, which cannot hand a
+Media Source stream to a Chromecast.
+
+| What | How |
+|---|---|
+| **Approval adds** | A request from a search carries the provider's id (migration 0039); approving it adds the title, marks what was asked for wanted, links the request and starts the search. Several root folders: chosen beside Approve |
+| **Seasons and episodes** | A series request names the whole series, seasons or episodes, from `GET /api/v1/requests/series/{id}/seasons`; stored as `S1,S2E5`, part of the match key |
+| **Removals** | *Ask to remove…* on a title, the whole of it or seasons and episodes on disk; approved only by somebody who may delete; files to the trash, and what was removed is no longer wanted |
+| **Downloads order** | Newest first by when added, stable between reads |
+| **Clear** | Empties the search, its results and the indexers' answers |
+| **Theme** | A Light / Dark button in the top bar, kept in the browser; dark by default |
+| **One copy** | Across filesystems the file is copied and the download's file replaced by a symbolic link to it; a finished download never fetches again |
+| **Casting** | Google's Cast sender, loaded on the first press; the Chromecast fetches the converted stream by a link signed for one file and account for six hours; the player's controls drive the TV |
+
+#### Verified
+
+| Claim | How it is established |
+|---|---|
+| Approving a request for a film adds it, links it and starts the search | `api.TestApprovingARequestAddsItsFilmAndStartsTheSearch` |
+| A request for one episode wants only it; the whole series, asked for after, is another request and wants all of it | `api.TestApprovingPartOfASeriesWantsOnlyThatPart` |
+| A removal is asked for by a User, refused to a Manager, and carried out by an Admin | `api.TestARemovalIsAskedForAndOnlyADeleterApprovesIt` |
+| A removal of a season stops wanting it, and only its files are chosen | `api.TestARemovalOfPartOfASeriesTakesThoseFilesAndStopsWantingThem` |
+| A scope has one form | `request.TestAScopeHasOneCanonicalForm` |
+| The queue is newest first and stable | `api.TestTheQueueIsNewestFirstAndStable` |
+| Across filesystems (tmpfs to disk) one copy is kept and the download reads through the link | `library.TestPlaceKeepsOneCopyAcrossFilesystems`, `library.TestAShortCopyIsNotLinkedTo` |
+| A cast link reaches one file as its account, and a changed, forged or expired one reaches nothing | `api.TestACastLinkReachesOneFileAsItsAccount`, `api.TestACastLinkExpires`, `api.TestATitleOutOfScopeDoesNotExist` |
+
+Casting is untested against a real Chromecast: none is on this network.
+
+---
+
 ## Decisions locked
 
 | # | Decision | ADR |
@@ -5687,6 +5733,9 @@ after 15 s and loaded 18 cues; the cast button showed.
 | 72 | A full-window player; the original picture copied for a browser that decodes HEVC; a cheaper transcode that the server works ahead on; stalls wait for a buffer and drop to 720p | [0072](docs/adr/0072-a-full-screen-player-and-cheaper-playback.md) |
 | 73 | The player loads a converted stream through Media Source; torrents keep finished pieces across a restart (no part files); casting through the browser's Remote Playback | [0073](docs/adr/0073-player-loading-torrent-resume-casting.md) |
 | 74 | A copy started part-way starts its sound at the keyframe and says where; embedded subtitles read out once into a cache; the cast button always shown | [0074](docs/adr/0074-sync-subtitle-cache-cast-button.md) |
+| 75 | An approved request adds its title and starts the search; a request may name seasons or episodes; a User may ask for a removal, approved only by somebody who may delete; Downloads stable; Clear; a theme switch | [0075](docs/adr/0075-requests-add-themselves-seasons-removals.md) |
+| 76 | Across filesystems an imported file is copied and the download's file becomes a link to it; a finished download never fetches again | [0076](docs/adr/0076-one-copy-seeded-from-the-library.md) |
+| 77 | Casting with Google's Cast sender: the Chromecast fetches the film by a link signed for one file and account | [0077](docs/adr/0077-casting-to-a-chromecast.md) |
 | 9 | Opaque server-side sessions, not JWTs | See the header comment in `internal/identity/session.go` — immediate revocation is a hard requirement, and a self-contained token cannot do it without the database lookup a JWT exists to avoid |
 
 ### Defaults taken in the absence of an answer — override any of these

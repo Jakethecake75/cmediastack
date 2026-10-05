@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path"
 	"sort"
 	"strings"
@@ -379,18 +378,15 @@ func (i *Importer) importFile(ctx context.Context, infoHash string, vault *libra
 		}
 	}
 
-	// 6. Place it. Hardlink first; copy only if the filesystems differ.
-	hardlinked := true
-	if err := vault.Link(hostSrc, layout.RelPath); err != nil {
-		if !isCrossDevice(err) {
-			return Result{Outcome: OutcomeFailed, Detail: err.Error(), Selected: sel.Video.Path}, err
-		}
-		hardlinked = false
-		i.log.Warn("hardlinking was not possible, copying instead: this uses twice the disk space",
+	// 6. Place it: one copy, which the download seeds (ADR-0076).
+	copies, err := library.Place(source, sel.Video.Path, vault, layout.RelPath)
+	if err != nil {
+		return Result{Outcome: OutcomeFailed, Detail: err.Error(), Selected: sel.Video.Path}, err
+	}
+	hardlinked := copies == 1
+	if !hardlinked {
+		i.log.Warn("the file was copied and the download's copy could not be replaced: this uses twice the disk space",
 			slog.Int64("root_folder", rootID), slog.String("file", layout.RelPath))
-		if cerr := copyInto(vault, source, sel.Video.Path, layout.RelPath); cerr != nil {
-			return Result{Outcome: OutcomeFailed, Detail: cerr.Error(), Selected: sel.Video.Path}, cerr
-		}
 	}
 
 	// 7. Record it.
@@ -422,7 +418,7 @@ func (i *Importer) importFile(ctx context.Context, infoHash string, vault *libra
 		detail += fmt.Sprintf(" (replaced an earlier file, moved to %s)", superseded)
 	}
 	if !hardlinked {
-		detail += " (copied: the library and the downloads are on different filesystems, so this used twice the disk space)"
+		detail += " (copied, and the download's copy could not be replaced by a link to it, so this used twice the disk space)"
 	}
 	if placed > 0 {
 		detail += fmt.Sprintf(" with %d subtitle file(s)", placed)
@@ -675,15 +671,6 @@ func copyInto(vault *library.Vault, source *library.ContainedSource, rel, dst st
 	defer func() { _ = in.Close() }()
 	_, err = vault.CopyFrom(in, dst)
 	return err
-}
-
-// isCrossDevice reports whether an error is EXDEV, the one failure a copy can
-// recover from. Every other link failure is a real problem and copying past it
-// would turn a permissions bug into silent disk consumption.
-func isCrossDevice(err error) bool {
-	return errors.Is(err, os.ErrInvalid) ||
-		strings.Contains(err.Error(), "cross-device") ||
-		strings.Contains(err.Error(), "invalid cross-device link")
 }
 
 // recordArrival writes a file's arrival in the library to the audit log: what

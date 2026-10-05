@@ -13,6 +13,7 @@ import (
 	"github.com/jakethecake75/cmediastack/internal/authz"
 	"github.com/jakethecake75/cmediastack/internal/download"
 	"github.com/jakethecake75/cmediastack/internal/importer"
+	"github.com/jakethecake75/cmediastack/internal/playback"
 	"github.com/jakethecake75/cmediastack/internal/release"
 	"github.com/jakethecake75/cmediastack/internal/search"
 )
@@ -57,6 +58,9 @@ func (f *fakeFilms) FilesFor(_ context.Context, id int64) ([]importer.File, erro
 	return f.files[id], nil
 }
 func (f *fakeFilms) RecordsFor(context.Context, string) ([]importer.Record, error) { return nil, nil }
+func (f *fakeFilms) FileForPlayback(context.Context, int64) (playback.FileRef, error) {
+	return playback.FileRef{}, importer.ErrFileNotFound
+}
 func (f *fakeFilms) Film(ctx context.Context, id int64) (importer.Item, error) {
 	it, err := f.GetItem(ctx, id)
 	if err != nil {

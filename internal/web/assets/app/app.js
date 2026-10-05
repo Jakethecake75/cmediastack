@@ -14,6 +14,11 @@
 'use strict';
 
 (function () {
+  /* Light or dark, chosen with the button in the top bar and kept in this
+   * browser (ADR-0075); dark until it is chosen. */
+  var theme = 'dark';
+  try { theme = localStorage.getItem('cms-theme') === 'light' ? 'light' : 'dark'; } catch (e) { /* private window */ }
+  document.documentElement.setAttribute('data-theme', theme);
   var CSRF_COOKIE = 'cms_csrf';
   var CSRF_HEADER = 'X-CSRF-Token';
 
@@ -564,6 +569,11 @@
    * accurate and unhelpful: "approved" does not tell somebody whether anything
    * is actually happening, which is the only thing they want to know. */
   function requestState(rq) {
+    if (rq.action === 'remove') {
+      if (rq.state === 'fulfilled') { return ['good', 'removed']; }
+      if (rq.state === 'denied') { return ['bad', 'declined']; }
+      return ['warn', 'removal waiting for approval'];
+    }
     if (rq.state === 'fulfilled') { return ['good', 'in your library']; }
     if (rq.state === 'denied') { return ['bad', 'declined']; }
     if (rq.state === 'approved') {
@@ -683,6 +693,8 @@
         ];
         if (rq.waiting > 1) { pairs.push(['also waiting', (rq.waiting - 1) + ' other(s)']); }
         if (rq.followers) { pairs.push(['waiting', rq.followers.join(', ')]); }
+        if (rq.action === 'remove') { pairs.push(['asks to', 'remove it and delete its files']); }
+        if (rq.scope) { pairs.push([rq.action === 'remove' ? 'only' : 'wants', scopeWords(rq.scope)]); }
         if (rq.decided_by) { pairs.push(['decided by', rq.decided_by]); }
         /* Only when the server named it: the name is a read of the library,
          * given to somebody who may browse it. */
@@ -704,7 +716,7 @@
          * people stop trusting. Acting on it is adding the title and linking
          * the request to it (ADR-0028); it is then fulfilled when a file of
          * that title arrives, whichever search grabbed it. */
-        if (rq.state === 'approved' && can('request.approve')) {
+        if (rq.state === 'approved' && rq.action !== 'remove' && can('request.approve')) {
           var next = actions(item);
           if (!rq.media_item_id) {
             /* Not when something is already downloading for it: a grab that
@@ -728,11 +740,29 @@
           }
         }
 
-        if (rq.state === 'pending' && can('request.approve')) {
+        /* A removal deletes files when approved, so only somebody who may
+         * delete them is offered it (ADR-0075). */
+        if (rq.state === 'pending' && can('request.approve') &&
+            (rq.action !== 'remove' || can('library.delete'))) {
           var acts = actions(item);
-          acts.appendChild(button('Approve', 'primary', function (b) {
+          /* Approving adds the title (ADR-0075); where, when more than one
+           * root folder could hold it. */
+          var where = null;
+          if (rq.action !== 'remove' && rq.tmdb_id && can('library.edit')) {
+            loadRootsOf(rq.kind === 'series' ? 'series' : 'movies').then(function (roots) {
+              if (roots.length < 2) { return; }
+              where = choices('Where does it live?', roots.map(function (rf) {
+                return [String(rf.id), rf.path + ' (' + bytes(rf.free_bytes) + ' free)'];
+              }));
+              where.setAttribute('aria-label', 'Where does it live?');
+              acts.insertBefore(where, acts.firstChild);
+            });
+          }
+          acts.appendChild(button(rq.action === 'remove' ? 'Approve and delete' : 'Approve', 'primary', function (b) {
+            if (where && !where.value) { return refuse('choose where it lives first'); }
             b.disabled = true;
-            api('POST', '/api/v1/requests/' + rq.id + '/approve').then(function (r) {
+            api('POST', '/api/v1/requests/' + rq.id + '/approve',
+              where ? { root_folder_id: Number(where.value) } : undefined).then(function (r) {
               b.disabled = false;
               if (r.status !== 200) { fail(r, 'could not approve that request'); return; }
               ok((r.body && r.body.message) || 'Approved.');
@@ -2076,6 +2106,7 @@
         box.appendChild(titleRatingRow(it));
       }
       if (can('request.submit')) { box.appendChild(reportProblemRow(it)); }
+      if (video && can('request.submit') && !can('library.delete')) { box.appendChild(removalRow(it)); }
 
       /* A series shows what it is MISSING before what it has. The episode list
        * comes from the provider, never from the files — a list built from
@@ -2605,7 +2636,14 @@
     addingFor = { id: rq.id, kind: rq.kind === 'series' ? 'series' : 'movie',
       title: rq.title, year: rq.year || 0, asker: rq.requested_by || 'somebody',
       searched: false };
-    window.location.hash = '#find';
+    /* The requests list is on Search itself, so the address is already #find
+     * and no hashchange would fire: load the screen here (ADR-0075). */
+    if (currentView() === 'find') {
+      loaders.find();
+      window.scrollTo(0, 0);
+    } else {
+      window.location.hash = '#find';
+    }
   }
 
   /* The line at the top of the Add screen that says it is adding for a
@@ -2755,6 +2793,15 @@
 
   function wireFind() {
     $('find-kind').addEventListener('change', function () { findMode(); resetFind(); });
+    /* Clear: the words, the results and what each indexer answered (ADR-0075). */
+    $('find-clear').addEventListener('click', function () {
+      $('find-term').value = '';
+      $('find-year').value = '';
+      addingFor = null;
+      showAddingFor();
+      resetFind();
+      $('find-term').focus();
+    });
     $('search-profile').addEventListener('change', showSearchDefault);
     submit($('find-form'), function () {
       var results = $('find-results');
@@ -2816,12 +2863,21 @@
       }));
     } else {
       acts.appendChild(button('Request', 'primary', function (b) {
+        if (kind !== 'series') { return sendRequest(b, m, kind, []); }
+        /* A series: all of it, or the seasons and episodes chosen (ADR-0075). */
         b.disabled = true;
-        api('POST', '/api/v1/requests', { kind: kind, title: m.title, year: m.year || 0, note: '' }).then(function (rr) {
-          if (rr.status !== 201 && rr.status !== 200) { b.disabled = false; return fail(rr, 'could not record that request'); }
-          b.textContent = 'Requested';
-          ok((rr.body && rr.body.message) || 'Requested.');
-          loadRequests();
+        api('GET', '/api/v1/requests/series/' + m.provider_id + '/seasons').then(function (res) {
+          if (res.status !== 200 || !res.body) { b.disabled = false; return fail(res, 'could not read its seasons'); }
+          var picker = scopePicker((res.body.seasons || []).map(function (s) {
+            var eps = [];
+            for (var n = 1; n <= s.episodes; n++) { eps.push(n); }
+            return { number: s.number, episodes: eps };
+          }), 'The whole series');
+          picker.box.appendChild(button('Send request', 'primary', function (sb) {
+            if (picker.none()) { return refuse('choose a season or an episode, or the whole series'); }
+            sendRequest(sb, m, kind, picker.parts());
+          }));
+          box.appendChild(picker.box);
         });
       }));
     }
@@ -2831,6 +2887,127 @@
     }));
     box.hidden = false;
     box.scrollIntoView({ block: 'nearest' });
+  }
+
+  /* sendRequest asks for a title the provider named, so approving it can add
+   * it without a second search (ADR-0075). */
+  function sendRequest(b, m, kind, parts) {
+    b.disabled = true;
+    api('POST', '/api/v1/requests', { kind: kind, title: m.title, year: m.year || 0, note: '',
+      tmdb_id: m.provider_id, scope: parts }).then(function (rr) {
+      if (rr.status !== 201 && rr.status !== 200) { b.disabled = false; return fail(rr, 'could not record that request'); }
+      b.textContent = 'Requested';
+      ok((rr.body && rr.body.message) || 'Requested.');
+      loadRequests();
+    });
+  }
+
+  /* scopePicker chooses part of a series (ADR-0075): the whole of it, or
+   * seasons, or single episodes. seasons is [{number, episodes: [n...]}]. */
+  function scopePicker(seasons, wholeLabel) {
+    var box = el('div', 'scope-picker');
+    var tick = function (text) {
+      var l = el('label', 'scope-tick');
+      var c = el('input');
+      c.type = 'checkbox';
+      l.appendChild(c);
+      l.appendChild(document.createTextNode(' ' + text));
+      return { label: l, box: c };
+    };
+    var whole = tick(wholeLabel);
+    whole.box.checked = true;
+    box.appendChild(whole.label);
+    var list = el('div', 'scope-seasons');
+    list.hidden = true;
+    box.appendChild(list);
+    whole.box.addEventListener('change', function () { list.hidden = whole.box.checked; });
+
+    var picked = [];
+    seasons.forEach(function (s) {
+      var line = el('div', 'scope-season');
+      var season = tick((s.number === 0 ? 'Specials' : 'Season ' + s.number) +
+        ' (' + s.episodes.length + ' episode' + (s.episodes.length === 1 ? '' : 's') + ')');
+      line.appendChild(season.label);
+      var eps = el('div', 'scope-episodes');
+      eps.hidden = true;
+      var boxes = s.episodes.map(function (n) {
+        var e = tick('E' + pad(n));
+        eps.appendChild(e.label);
+        picked.push({ season: s.number, episode: n, box: e.box, whole: season.box });
+        return e.box;
+      });
+      if (s.episodes.length) {
+        line.appendChild(button('Episodes\u2026', 'ghost', function () { eps.hidden = !eps.hidden; }));
+      }
+      season.box.addEventListener('change', function () {
+        boxes.forEach(function (c) { c.disabled = season.box.checked; });
+      });
+      picked.push({ season: s.number, episode: 0, box: season.box });
+      line.appendChild(eps);
+      list.appendChild(line);
+    });
+
+    var parts = function () {
+      if (whole.box.checked) { return []; }
+      return picked.filter(function (p) {
+        return p.box.checked && !(p.whole && p.whole.checked);
+      }).map(function (p) {
+        return p.episode ? { season: p.season, episode: p.episode } : { season: p.season };
+      });
+    };
+    return { box: box, parts: parts, none: function () { return !whole.box.checked && !parts().length; } };
+  }
+
+  function scopeWords(scope) {
+    return scope.map(function (p) {
+      return p.episode ? 'S' + pad(p.season) + 'E' + pad(p.episode) : 'Season ' + p.season;
+    }).join(', ');
+  }
+
+  /* Asking for a title to be removed and its files deleted (ADR-0075):
+   * whoever may delete files decides. */
+  function removalRow(it) {
+    var what = it.kind === 'movie' ? 'film' : 'series';
+    var r = row('Want it gone?', 'Ask for this ' + what + ' to be removed and its files deleted.');
+    actions(r).appendChild(button('Ask to remove\u2026', 'ghost', function (b) {
+      b.disabled = true;
+      var form = el('div', 'add-choice');
+      var picker = null;
+      if (it.kind === 'series') {
+        var bySeason = {};
+        (it.files || []).forEach(function (f) {
+          if (f.season === undefined || f.episode === undefined) { return; }
+          var list = bySeason[f.season] = bySeason[f.season] || [];
+          for (var n = f.episode; n <= (f.episode_last || f.episode); n++) {
+            if (list.indexOf(n) === -1) { list.push(n); }
+          }
+        });
+        var seasons = Object.keys(bySeason).map(Number).sort(function (a, c) { return a - c; }).map(function (n) {
+          return { number: n, episodes: bySeason[n].sort(function (a, c) { return a - c; }) };
+        });
+        picker = scopePicker(seasons, 'The whole series');
+        form.appendChild(picker.box);
+      }
+      var note = el('input');
+      note.type = 'text';
+      note.maxLength = 500;
+      note.placeholder = 'Why (optional)';
+      note.setAttribute('aria-label', 'Why');
+      form.appendChild(note);
+      form.appendChild(button('Send', 'danger', function (sb) {
+        if (picker && picker.none()) { return refuse('choose a season or an episode, or the whole series'); }
+        sb.disabled = true;
+        api('POST', '/api/v1/requests', { action: 'remove', media_item_id: it.id, kind: it.kind,
+          title: it.title, note: note.value, scope: picker ? picker.parts() : [] }).then(function (res) {
+          if (res.status !== 201 && res.status !== 200) { sb.disabled = false; return fail(res, 'could not ask for that'); }
+          ok((res.body && res.body.message) || 'Asked.');
+          clear(form);
+          form.appendChild(el('div', 'note', 'Asked. Your requests on Search show what is decided.'));
+        });
+      }));
+      r.appendChild(form);
+    }));
+    return r;
   }
 
   /* Artists come from MusicBrainz, not the film and series provider
@@ -3510,6 +3687,8 @@
   /* Stop whatever is playing. Leaving the source attached would keep the
    * browser streaming a file nobody is watching. */
   function stopVideo(video) {
+    /* The TV goes on playing; the browser's Cast menu stops it. */
+    casting = null;
     stopFeed();
     releaseHold(false);
     video.pause();
@@ -3652,8 +3831,14 @@
    * file plays directly. */
   var conv = null;
 
-  function filmTime(video) { return (conv ? conv.start : 0) + (video.currentTime || 0); }
-  function filmDuration(video) { return conv ? conv.duration : video.duration; }
+  function filmTime(video) {
+    if (casting) { return casting.start + (casting.sdk.player.currentTime || 0); }
+    return (conv ? conv.start : 0) + (video.currentTime || 0);
+  }
+  function filmDuration(video) {
+    if (casting) { return casting.duration; }
+    return conv ? conv.duration : video.duration;
+  }
 
   function playConverted(video, info, at, o) {
     o = o || {};
@@ -3836,6 +4021,7 @@
     var total = filmDuration(video);
     if (!isFinite(total) || total <= 0) { return; }
     t = Math.max(0, Math.min(t, total - 1));
+    if (casting) { castSeek(t); return; }
     if (!conv) { video.currentTime = t; return; }
     var local = t - conv.start;
     if (local >= 0 && inRanges(video.buffered, local)) { video.currentTime = local; return; }
@@ -3845,6 +4031,7 @@
 
   /* How far the picture has arrived, in the film's time. */
   function loadedEnd(video) {
+    if (casting) { return filmTime(video); }
     var b = video.buffered, now = video.currentTime || 0;
     for (var i = 0; i < b.length; i++) {
       if (now >= b.start(i) - 0.5 && now <= b.end(i)) { return (conv ? conv.start : 0) + b.end(i); }
@@ -3859,7 +4046,7 @@
     var video = $('watch-video');
     var range = $('watch-seek-range');
     var total = filmDuration(video);
-    var playingNow = !video.paused || !!hold;
+    var playingNow = casting ? !casting.sdk.player.isPaused : (!video.paused || !!hold);
     var play = $('pl-play');
     icon(play, playingNow ? 'pause' : 'play');
     play.setAttribute('aria-label', playingNow ? 'Pause' : 'Play');
@@ -4146,6 +4333,7 @@
 
   function togglePlay() {
     var video = $('watch-video');
+    if (casting) { casting.sdk.ctl.playOrPause(); return; }
     if (hold) { releaseHold(false); paint(); return; }
     if (video.paused) { start(video); } else { video.pause(); }
   }
@@ -4162,6 +4350,150 @@
     var video = $('watch-video');
     video.volume = Math.max(0, Math.min(1, v));
     video.muted = video.volume === 0;
+  }
+
+  /* Casting (ADR-0077), as Jellyfin and Emby do it: Google's Cast sender,
+   * loaded the first time Cast is pressed, sends the Chromecast a signed link
+   * to the film on this server, and the Chromecast fetches and plays it. The
+   * player's own controls then drive the TV and its clock shows the TV's
+   * time. Safari, which has no Cast sender, is given its own AirPlay picker. */
+  var casting = null;
+  var castSDK = null;
+
+  function castSender() {
+    if (castSDK) { return castSDK; }
+    castSDK = new Promise(function (resolve) {
+      var settled = false;
+      var done = function (v) { if (!settled) { settled = true; resolve(v); } };
+      window.__onGCastApiAvailable = function (available) {
+        if (!available) { return done(null); }
+        var fw = window.cast.framework;
+        fw.CastContext.getInstance().setOptions({
+          receiverApplicationId: window.chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+          autoJoinPolicy: window.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
+        });
+        var player = new fw.RemotePlayer();
+        var ctl = new fw.RemotePlayerController(player);
+        var E = fw.RemotePlayerEventType;
+        ctl.addEventListener(E.IS_CONNECTED_CHANGED, function () {
+          if (!player.isConnected && casting) { castEnded(); }
+        });
+        ctl.addEventListener(E.CURRENT_TIME_CHANGED, function () {
+          if (!casting || !player.isConnected) { return; }
+          /* Kept, because the time reads 0 once the TV has gone. */
+          casting.last = filmTime($('watch-video'));
+          savePosition($('watch-video'));
+          paint();
+        });
+        ctl.addEventListener(E.IS_PAUSED_CHANGED, function () { if (casting) { paint(); } });
+        done({ fw: fw, player: player, ctl: ctl });
+      };
+      var s = document.createElement('script');
+      s.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
+      s.addEventListener('error', function () { done(null); });
+      document.head.appendChild(s);
+      /* A browser without Cast never calls back. */
+      setTimeout(function () { done(null); }, 8000);
+    });
+    return castSDK;
+  }
+
+  function castClick() {
+    var video = $('watch-video');
+    if (!playingInfo) { return toast('Start the film, then cast it.'); }
+    castSender().then(function (sdk) {
+      if (!sdk) { return remotePrompt(video); }
+      var ctx = sdk.fw.CastContext.getInstance();
+      if (casting) { ctx.endCurrentSession(true); return; }
+      var at = filmTime(video);
+      var ready = ctx.getCurrentSession() ? Promise.resolve() : ctx.requestSession();
+      ready.then(function () { castLoad(sdk, at); }, function (code) {
+        if (code !== 'cancel') {
+          toast('No TV or Chromecast answered. It has to be on the same network as this device; ' +
+            'a VPN can hide it.');
+        }
+      });
+    });
+  }
+
+  /* castLoad starts the film on the TV at a time. A converted stream cannot
+   * be seeked in, so it starts at that second, as the player's own does; a
+   * file the TV plays as it is is seeked by the TV. */
+  function castLoad(sdk, at) {
+    var video = $('watch-video');
+    var info = playingInfo;
+    api('POST', '/api/v1/files/' + watchState.fileId + '/cast').then(function (res) {
+      if (res.status !== 200 || !res.body) { return fail(res, 'could not cast this'); }
+      var session = sdk.fw.CastContext.getInstance().getCurrentSession();
+      if (!session || !playingInfo) { return; }
+      var start = Math.max(0, Math.floor(at));
+      var converted = !!info.can_convert;
+      /* The TV gets H.264 and AAC: the picture copied where it already is,
+       * otherwise transcoded, as for a browser without HEVC. */
+      var path = converted ? res.body.convert + '?audio=aac' + (start ? '&start=' + start : '') : res.body.stream;
+      var cc = window.chrome.cast.media;
+      var media = new cc.MediaInfo(window.location.origin + path, 'video/mp4');
+      media.streamType = cc.StreamType.BUFFERED;
+      media.metadata = new cc.GenericMediaMetadata();
+      media.metadata.title = watchState.title;
+      var req = new cc.LoadRequest(media);
+      if (!converted) { req.currentTime = start; }
+      savePosition(video, { force: true });
+      stopFeed();
+      releaseHold(false);
+      video.pause();
+      casting = { sdk: sdk, converted: converted, start: converted ? start : 0,
+        duration: (info.duration_ms || 0) / 1000 || filmDuration(video) };
+      paint();
+      session.loadMedia(req).then(function () {
+        toast('Playing on ' + session.getCastDevice().friendlyName + '. Press Cast again to stop.');
+        paint();
+      }, function (code) {
+        casting = null;
+        toast('The TV could not play it (' + code + '). It fetches the film from this server ' +
+          'itself, so it needs this address and its certificate to work from the TV\u2019s network.');
+        paint();
+      });
+    });
+  }
+
+  function castSeek(t) {
+    if (!casting.converted) {
+      casting.sdk.player.currentTime = t;
+      casting.sdk.ctl.seek();
+      return;
+    }
+    castLoad(casting.sdk, t);
+  }
+
+  /* The TV stopped: the film goes on here, from where the TV got to. */
+  function castEnded() {
+    var video = $('watch-video');
+    var t = casting.last || casting.start;
+    casting = null;
+    toast('Stopped casting.');
+    if (!playingInfo) { return; }
+    if (conv) {
+      playConverted(video, conv.info, t);
+    } else {
+      video.currentTime = t;
+      start(video);
+    }
+    paint();
+  }
+
+  /* The browser's own picker, where there is no Cast sender (Safari). */
+  function remotePrompt(video) {
+    if (!video.remote || !video.remote.prompt) {
+      return toast('This browser cannot cast. Chrome and Edge cast to a Chromecast, Safari to AirPlay.');
+    }
+    video.remote.prompt().catch(function (e) {
+      if (e.name === 'NotFoundError') {
+        toast('No TV was found. It has to be on the same network as this device; a VPN can hide it.');
+      } else if (e.name !== 'AbortError') {
+        toast('This browser could not cast this video: ' + e.message);
+      }
+    });
   }
 
   /* Leaving the player: the place is saved, the stream stopped. */
@@ -4270,19 +4602,11 @@
     /* Casting is the browser's own (ADR-0073): Chrome and Edge to a Cast
      * device, Safari to AirPlay. The button is there whenever the browser
      * can cast at all (ADR-0074), and says why when no device answers. */
-    if (video.remote && video.remote.prompt) {
+    if (window.chrome || (video.remote && video.remote.prompt)) {
       $('pl-cast').hidden = false;
-      $('pl-cast').addEventListener('click', function () {
-        video.remote.prompt().catch(function (e) {
-          if (e.name === 'NotFoundError') {
-            toast('No TV or Chromecast was found. It has to be on the same network as this ' +
-              'device; a VPN can hide it.');
-          } else if (e.name !== 'AbortError') {
-            toast('This video cannot be cast from here. The browser\u2019s own menu can cast ' +
-              'the whole tab (\u22ee \u2192 Cast\u2026).');
-          }
-        });
-      });
+      $('pl-cast').addEventListener('click', castClick);
+    }
+    if (video.remote) {
       video.remote.addEventListener('connect', function () { toast('Casting.'); });
       video.remote.addEventListener('disconnect', function () { toast('Stopped casting.'); });
     }
@@ -5796,6 +6120,22 @@
     });
   };
 
+  function wireTheme() {
+    var b = $('theme');
+    var show = function () {
+      var light = document.documentElement.getAttribute('data-theme') === 'light';
+      b.textContent = light ? 'Dark mode' : 'Light mode';
+      b.setAttribute('aria-pressed', light ? 'false' : 'true');
+    };
+    b.addEventListener('click', function () {
+      var next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem('cms-theme', next); } catch (e) { /* not kept; still switched */ }
+      show();
+    });
+    show();
+  }
+
   function boot() {
     api('GET', '/api/v1/me').then(function (res) {
       if (res.status === 409) { window.location.assign('/enroll'); return; }
@@ -5811,6 +6151,7 @@
         });
       });
 
+      wireTheme();
       buildNav();
       wireInviteForm();
       wireCreateUserForm();

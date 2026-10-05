@@ -31,6 +31,8 @@ const maxRequestBody = 64 << 10 // 64 KiB
 // the route-enumeration test cover the whole surface before the business logic
 // behind it exists.
 type Handlers struct {
+	// castKey signs cast links (ADR-0077).
+	castKey   []byte
 	proxy     *egressproxy.Controller
 	restart   func()
 	svc       *identity.Service
@@ -201,7 +203,8 @@ func New(d Deps) *Handlers {
 		d.TrashRetention = 7 * 24 * time.Hour
 	}
 	return &Handlers{
-		proxy: d.Proxy, restart: d.Restart,
+		castKey: newCastKey(),
+		proxy:   d.Proxy, restart: d.Restart,
 		svc: d.Identity, auth: d.Auth, tasks: d.Tasks, egress: d.Egress,
 		indexers: d.Indexers, search: d.Search, profiles: d.Profiles,
 		downloads: d.Downloads, roots: d.Roots, media: d.Media,

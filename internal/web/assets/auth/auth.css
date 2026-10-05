@@ -6,7 +6,7 @@
  */
 
 :root {
-  color-scheme: dark light;
+  color-scheme: dark;
   --bg: #0e1116;
   --surface: #161b22;
   --line: #2a323d;
@@ -22,15 +22,16 @@
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f4f6f9;
-    --surface: #ffffff;
-    --line: #d8dee6;
-    --text: #1b2027;
-    --muted: #5b6673;
-    --accent: #1a5fd0;
-  }
+/* Light, when chosen with the button in the top bar (ADR-0075). The
+ * system's own preference is not followed. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --line: #d8dee6;
+  --text: #1b2027;
+  --muted: #5b6673;
+  --accent: #1a5fd0;
 }
 
 * { box-sizing: border-box; }

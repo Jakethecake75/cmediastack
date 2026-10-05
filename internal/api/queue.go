@@ -1,9 +1,11 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -197,6 +199,7 @@ func (h *Handlers) Queue(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	sortQueue(items)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items":       items,
 		"notes":       h.downloads.Notes(),
@@ -271,3 +274,19 @@ func (h *Handlers) QueueRemove(w http.ResponseWriter, r *http.Request) {
 // automaticRecord reports whether a queue row was added by automatic
 // acquisition rather than by a person: no person's id, and its label.
 func automaticRecord(rec download.Record) bool { return acquire.Automatic(rec) }
+
+// sortQueue puts the newest download first and keeps every row in its place
+// between reads. The engine lists its torrents in map order, which differs on
+// every read, so the Downloads page reshuffled every two seconds (ADR-0075).
+func sortQueue(items []queueItem) {
+	slices.SortStableFunc(items, func(a, b queueItem) int {
+		var ta, tb time.Time
+		if a.AddedAt != nil {
+			ta = *a.AddedAt
+		}
+		if b.AddedAt != nil {
+			tb = *b.AddedAt
+		}
+		return cmp.Or(tb.Compare(ta), cmp.Compare(a.InfoHash, b.InfoHash))
+	})
+}

@@ -6,7 +6,7 @@
  */
 
 :root {
-  color-scheme: dark light;
+  color-scheme: dark;
   --bg: #0e1116;
   --surface: #161b22;
   --surface-2: #1c232c;
@@ -28,22 +28,30 @@
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f4f6f9;
-    --surface: #ffffff;
-    --surface-2: #eef1f5;
-    --line: #d8dee6;
-    --text: #1b2027;
-    --muted: #5b6673;
-    --accent: #1a5fd0;
-    --ok-bg: #dff0e4;
-    --err-bg: #f6dede;
-    --warn-text: #8a5d12;
-  }
+/* Light, when chosen with the button in the top bar (ADR-0075). The
+ * system's own preference is not followed. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --line: #d8dee6;
+  --text: #1b2027;
+  --muted: #5b6673;
+  --accent: #1a5fd0;
+  --ok-bg: #dff0e4;
+  --err-bg: #f6dede;
+  --warn-text: #8a5d12;
 }
 
 * { box-sizing: border-box; }
+
+/* Choosing part of a series to ask for or remove (ADR-0075). */
+.scope-picker { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.scope-seasons { display: flex; flex-direction: column; gap: 6px; padding-left: 12px; }
+.scope-season { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.scope-episodes { display: flex; flex-wrap: wrap; gap: 4px 12px; flex-basis: 100%; padding-left: 20px; }
+.scope-tick { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; }
 
 body {
   margin: 0;

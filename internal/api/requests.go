@@ -34,6 +34,13 @@ func requestJSON(r *request.Request, actor *authz.Principal) map[string]any {
 		"requested_by": r.RequesterName,
 		"requested_at": r.RequestedAt,
 		"waiting":      len(r.Followers),
+		"action":       string(r.Action),
+	}
+	if r.TMDBID > 0 {
+		out["tmdb_id"] = r.TMDBID
+	}
+	if parts, err := request.ParseScope(r.Scope); err == nil && len(parts) > 0 {
+		out["scope"] = parts
 	}
 	if r.Year > 0 {
 		out["year"] = r.Year
@@ -98,6 +105,12 @@ type submitRequest struct {
 	Title string `json:"title"`
 	Year  int    `json:"year"`
 	Note  string `json:"note"`
+	// The provider's title chosen from a search, the seasons and episodes
+	// wanted, and a removal of a library item (ADR-0075).
+	TMDBID      int64          `json:"tmdb_id"`
+	Scope       []request.Part `json:"scope"`
+	Action      string         `json:"action"`
+	MediaItemID int64          `json:"media_item_id"`
 }
 
 // SubmitRequest records a request to acquire something.
@@ -111,10 +124,40 @@ func (h *Handlers) SubmitRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.requests.Submit(r.Context(), request.NewRequest{
+	nr := request.NewRequest{
 		Kind:  request.Kind(strings.ToLower(strings.TrimSpace(in.Kind))),
 		Title: in.Title, Year: in.Year, Note: in.Note,
-	})
+		TMDBID: in.TMDBID, Action: request.Action(strings.ToLower(strings.TrimSpace(in.Action))),
+	}
+	scope, err := request.FormatScope(in.Scope)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	nr.Scope = scope
+	// A removal names a library item the asker can see, and is for what that
+	// item is: its kind, title and year come from the library, not the body.
+	if nr.Action == request.ActionRemove {
+		if h.media == nil {
+			writeProblem(w, http.StatusNotImplemented, "no library is wired")
+			return
+		}
+		it, gerr := h.media.GetItem(r.Context(), in.MediaItemID)
+		if errors.Is(gerr, importer.ErrItemNotFound) {
+			writeProblem(w, http.StatusNotFound, "there is no such title in the library")
+			return
+		} else if gerr != nil {
+			writeAuthzAware(w, gerr)
+			return
+		}
+		if it.Kind != importer.KindMovie && it.Kind != importer.KindSeries {
+			writeProblem(w, http.StatusBadRequest, "only a film or a series can be asked to be removed")
+			return
+		}
+		nr.Kind, nr.Title, nr.Year, nr.MediaItemID, nr.TMDBID = request.Kind(it.Kind), it.Title, it.Year, it.ID, 0
+	}
+
+	res, err := h.requests.Submit(r.Context(), nr)
 	switch {
 	case errors.Is(err, request.ErrTooManyOpen):
 		// 429 rather than 403: the actor is allowed, they have simply used
@@ -146,8 +189,11 @@ func (h *Handlers) SubmitRequest(w http.ResponseWriter, r *http.Request) {
 			"to that request rather than a second one being opened."
 		writeJSON(w, http.StatusOK, body)
 	case res.AutoApproved:
-		body["message"] = "Approved on submission, because your role may approve its own " +
-			"requests. Nothing has been downloaded yet — a release still has to be chosen."
+		body["message"] = "Approved on submission, because your role may approve its own requests. " +
+			h.addForRequest(r.Context(), res.Request, 0)
+		writeJSON(w, http.StatusCreated, body)
+	case res.Request.Action == request.ActionRemove:
+		body["message"] = "Asked. Whoever may delete files decides; nothing is removed until then."
 		writeJSON(w, http.StatusCreated, body)
 	default:
 		body["message"] = "Waiting for approval."
@@ -201,6 +247,9 @@ func scopeWord(actor *authz.Principal) string {
 
 type denyRequestBody struct {
 	Reason string `json:"reason"`
+	// RootFolderID is where an approved title is added when several root
+	// folders could hold it (ADR-0075).
+	RootFolderID int64 `json:"root_folder_id"`
 }
 
 // ApproveRequest marks a request as something this instance will acquire.
@@ -228,6 +277,17 @@ func (h *Handlers) decideRequest(w http.ResponseWriter, r *http.Request, approve
 		return
 	}
 
+	// A removal deletes files when it is approved (ADR-0075), so only somebody
+	// who may delete them approves one. Asked before anything changes.
+	if approve {
+		if rq, verr := h.requests.Visible(r.Context(), id); verr == nil && rq.Action == request.ActionRemove &&
+			!authz.FromContext(r.Context()).Has(authz.PermDeleteMediaFiles) {
+			writeProblem(w, http.StatusForbidden,
+				"approving a removal deletes files, which your role may not do; ask an administrator")
+			return
+		}
+	}
+
 	var out *request.Request
 	if approve {
 		out, err = h.requests.Approve(r.Context(), id)
@@ -253,11 +313,23 @@ func (h *Handlers) decideRequest(w http.ResponseWriter, r *http.Request, approve
 		return
 	}
 
+	var msg string
+	switch {
+	case approve && out.Action == request.ActionRemove:
+		var rerr error
+		if msg, rerr = h.removeForRequest(r, out); rerr != nil {
+			msg = "Approved, but the files could not be removed: " + rerr.Error()
+		}
+	case approve:
+		msg = h.addForRequest(r.Context(), out, in.RootFolderID)
+	}
+	if fresh, ferr := h.requests.Visible(r.Context(), id); ferr == nil {
+		out = fresh
+	}
 	body := requestJSON(out, authz.FromContext(r.Context()))
+	withItem(r.Context(), body, out, authz.FromContext(r.Context()), h.itemNames())
 	if approve {
-		body["message"] = "Approved. Nothing has been downloaded: add it to the library from " +
-			"this request, then search for it from its page. The request is fulfilled when " +
-			"a file of it arrives."
+		body["message"] = msg
 	} else {
 		body["message"] = "Denied. The requester can see the reason."
 	}
@@ -371,4 +443,6 @@ type RequestService interface {
 	LinkGrab(ctx context.Context, id int64, infoHash string) error
 	// Link says which library item satisfies an approved request (ADR-0028).
 	Link(ctx context.Context, id, itemID int64) (request.Linked, error)
+	// CompleteRemoval closes an approved removal once it is done (ADR-0075).
+	CompleteRemoval(ctx context.Context, id int64, detail string) error
 }

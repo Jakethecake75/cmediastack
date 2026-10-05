@@ -119,6 +119,27 @@ func (svc *Service) FeedPrincipal(ctx context.Context, token string) (*authz.Pri
 	if err != nil {
 		return nil, err
 	}
+	p, err := svc.readOnlyPrincipal(ctx, userID, "feed", authz.PermBrowse)
+	if err != nil {
+		return nil, err
+	}
+	_, _ = svc.store.db.ExecContext(ctx,
+		`UPDATE feed_token SET last_used_at = ? WHERE user_id = ?`, ts(svc.now()), userID)
+	return p, nil
+}
+
+// CastPrincipal is the principal a cast link acts as (ADR-0077): its
+// account's, holding media.browse and media.stream where the role does, with
+// the account's libraries and ceiling. A link is refused once the account
+// may no longer sign in.
+func (svc *Service) CastPrincipal(ctx context.Context, userID int64) (*authz.Principal, error) {
+	return svc.readOnlyPrincipal(ctx, userID, "cast", authz.PermBrowse, authz.PermStream)
+}
+
+// readOnlyPrincipal is an active, enrolled account's principal holding only
+// the named permissions its role holds.
+func (svc *Service) readOnlyPrincipal(ctx context.Context, userID int64, label string,
+	keep ...authz.Permission) (*authz.Principal, error) {
 	user, err := svc.store.UserByID(ctx, userID)
 	if err != nil {
 		return nil, ErrFeedTokenInvalid
@@ -135,16 +156,16 @@ func (svc *Service) FeedPrincipal(ctx context.Context, token string) (*authz.Pri
 		return nil, err
 	}
 	perms := authz.PermissionSet{}
-	if role.Permissions.Has(authz.PermBrowse) {
-		perms[authz.PermBrowse] = struct{}{}
+	for _, p := range keep {
+		if role.Permissions.Has(p) {
+			perms[p] = struct{}{}
+		}
 	}
 	scoped := role
 	scoped.Permissions = perms
-	_, _ = svc.store.db.ExecContext(ctx,
-		`UPDATE feed_token SET last_used_at = ? WHERE user_id = ?`, ts(svc.now()), user.ID)
 	return &authz.Principal{
 		UserID: user.ID, Username: user.Username, Role: scoped, State: user.State,
-		SessionID: "feed", LibraryIDs: grants,
+		SessionID: label, LibraryIDs: grants,
 		UnrestrictedLibraries: user.AllLibraries || role.Permissions.Has(authz.PermSystemSettings),
 		RatingCeiling:         user.RatingCeiling,
 		MFASatisfied:          true,

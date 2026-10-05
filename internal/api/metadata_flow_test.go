@@ -63,6 +63,10 @@ func (f *fakeMetadata) Details(context.Context, metadata.Kind, int64) (metadata.
 	return metadata.Details{}, f.err
 }
 
+func (f *fakeMetadata) SeasonsToRequest(context.Context, int64) ([]metadata.Season, error) {
+	return nil, f.err
+}
+
 func quietLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
 // withMetadata rebuilds the router with a metadata service attached.

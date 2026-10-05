@@ -12,6 +12,12 @@
 'use strict';
 
 (function () {
+  /* The theme chosen in the app (ADR-0075), dark until one is. */
+  try {
+    if (localStorage.getItem('cms-theme') === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+  } catch (e) { /* private window */ }
   var CSRF_COOKIE = 'cms_csrf';
   var CSRF_HEADER = 'X-CSRF-Token';
 

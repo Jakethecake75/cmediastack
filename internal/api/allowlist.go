@@ -39,6 +39,13 @@ var AnonymousAllowlist = map[string]struct{}{
 	// handler; a wrong, revoked or suspended one is 404. Rate-limited.
 	"GET /api/v1/feeds/{token}/calendar.ics": {},
 	"GET /api/v1/feeds/{token}/rss":          {},
+	// A Chromecast fetching a film it was cast (ADR-0077). It cannot sign in;
+	// the path holds a link signed for one file and one account, for hours,
+	// checked by the handler, which then acts as that account. Not
+	// rate-limited: a player reads a film by many range requests, and a
+	// signed link cannot be guessed.
+	"GET /api/v1/cast/{token}/convert": {},
+	"GET /api/v1/cast/{token}/stream":  {},
 }
 
 // RouteID is the canonical "METHOD /pattern" identifier used by the allowlist,

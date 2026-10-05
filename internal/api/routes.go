@@ -170,6 +170,8 @@ func RegisterRoutes(rt *Router, h *Handlers) {
 	rt.Permission(http.MethodGet, "/api/v1/requests", authz.PermSubmitRequest, h.or(h.ListRequests))
 	// The provider search for an account that may only request (ADR-0069).
 	rt.Permission(http.MethodGet, "/api/v1/requests/search", authz.PermSubmitRequest, h.or(h.SearchToRequest))
+	// A series' seasons, to ask for some of them (ADR-0075).
+	rt.Permission(http.MethodGet, "/api/v1/requests/series/{id}/seasons", authz.PermSubmitRequest, h.or(h.SeasonsToRequest))
 	rt.Permission(http.MethodPost, "/api/v1/requests/{id}/approve", authz.PermApproveRequests, h.or(h.ApproveRequest))
 	rt.Permission(http.MethodPost, "/api/v1/requests/{id}/deny", authz.PermApproveRequests, h.or(h.DenyRequest))
 	// Which library item satisfies an approved request (ADR-0028). Saying which
@@ -286,6 +288,11 @@ func RegisterRoutes(rt *Router, h *Handlers) {
 	// it is the same file, made openable. The admission limit is what bounds
 	// the cost, not the permission.
 	rt.Permission(http.MethodGet, "/api/v1/files/{id}/convert", authz.PermBrowse, h.or(h.ConvertFile))
+	// Casting (ADR-0077): a signed link a Chromecast fetches the film by,
+	// acting as the account that cast it, without a session.
+	rt.Permission(http.MethodPost, "/api/v1/files/{id}/cast", authz.PermStream, h.or(h.CastLink))
+	rt.Anonymous(http.MethodGet, "/api/v1/cast/{token}/convert", h.or(h.CastConvert))
+	rt.Anonymous(http.MethodGet, "/api/v1/cast/{token}/stream", h.or(h.CastStream))
 	// Subtitles the library already holds: tracks inside the container and
 	// sidecars beside the file. Fetching FROM a provider is a separate thing
 	// and is not built. The {sid} is an opaque handle this server issued and

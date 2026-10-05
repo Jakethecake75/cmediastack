@@ -124,6 +124,10 @@ func (v *Vault) Close() error {
 // Dir reports the root directory. For display, logging and audit detail.
 func (v *Vault) Dir() string { return v.dir }
 
+// hostPath is name's full path on the host, for a link that points at it from
+// outside the root (ADR-0076). Never opened through: the root does that.
+func (v *Vault) hostPath(name string) string { return filepath.Join(v.dir, filepath.FromSlash(name)) }
+
 // ID reports the root folder's id.
 func (v *Vault) ID() int64 { return v.id }
 

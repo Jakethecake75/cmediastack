@@ -4,7 +4,7 @@
 Run `go generate ./internal/docs/` after changing routes;
 `docs.TestTheGeneratedDocumentsAreCurrent` fails while this file is stale.
 
-153 routes. **15 are reachable without a session**; every one of those also appears in `api.AnonymousAllowlist`, and `Router.register` panics at startup if the two ever disagree.
+157 routes. **17 are reachable without a session**; every one of those also appears in `api.AnonymousAllowlist`, and `Router.register` panics at startup if the two ever disagree.
 
 - **51 hidden** — 404 rather than 403 when unauthorized, so the route's existence is not disclosed (requirements §7.3).
 - **19 session-only** — an API token may not use them whatever its scope. Credential management lives here.
@@ -118,6 +118,13 @@ Run `go generate ./internal/docs/` after changing routes;
 |---|---|---|---|
 | GET | `/api/v1/books/search` | `library.edit` |  |
 
+## Cast
+
+| Method | Path | Requires | Notes |
+|---|---|---|---|
+| GET | `/api/v1/cast/{token}/convert` | anonymous |  |
+| GET | `/api/v1/cast/{token}/stream` | anonymous |  |
+
 ## Discover
 
 | Method | Path | Requires | Notes |
@@ -148,6 +155,7 @@ Run `go generate ./internal/docs/` after changing routes;
 | GET | `/api/v1/files/{id}/stream` | `media.browse` |  |
 | GET | `/api/v1/files/{id}/subtitles` | `media.browse` |  |
 | GET | `/api/v1/files/{id}/subtitles/{sid}` | `media.browse` |  |
+| POST | `/api/v1/files/{id}/cast` | `media.stream` |  |
 | POST | `/api/v1/files/{id}/subtitles/fetch` | `library.edit` |  |
 | PUT | `/api/v1/files/{id}/position` | `media.browse` |  |
 
@@ -271,6 +279,7 @@ Run `go generate ./internal/docs/` after changing routes;
 |---|---|---|---|
 | GET | `/api/v1/requests` | `request.submit` |  |
 | GET | `/api/v1/requests/search` | `request.submit` |  |
+| GET | `/api/v1/requests/series/{id}/seasons` | `request.submit` |  |
 | POST | `/api/v1/requests` | `request.submit` |  |
 | POST | `/api/v1/requests/{id}/approve` | `request.approve` |  |
 | POST | `/api/v1/requests/{id}/deny` | `request.approve` |  |

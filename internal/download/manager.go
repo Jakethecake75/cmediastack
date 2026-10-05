@@ -299,6 +299,7 @@ func (m *Manager) SyncCompletion(ctx context.Context) (int, error) {
 				slog.String("info_hash", r.InfoHash), slog.String("error", err.Error()))
 			continue
 		}
+		m.engine.Seal(r.InfoHash)
 		m.log.Info("a download finished",
 			slog.String("title", r.Title), slog.String("info_hash", r.InfoHash))
 		done++

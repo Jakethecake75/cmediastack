@@ -667,6 +667,16 @@ func (e *Engine) Start(hash string) error {
 	return nil
 }
 
+// Seal stops a finished transfer from fetching anything again (ADR-0076). Its
+// file may now be a link to the library's copy; a piece that will not read
+// from there — the file moved to the trash, or renamed — must not be fetched
+// again and written through the link into the library. It still seeds.
+func (e *Engine) Seal(hash string) {
+	if t, err := e.lookup(hash); err == nil {
+		t.DisallowDataDownload()
+	}
+}
+
 // List returns every transfer.
 func (e *Engine) List() []Transfer {
 	e.mu.RLock()

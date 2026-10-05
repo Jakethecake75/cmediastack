@@ -229,8 +229,9 @@ func TestAllowlistAndRegistrationsAgree(t *testing.T) {
 
 	// 14 since 4ag: the calendar and the feed, whose token is in the path
 	// (ADR-0041). 15 since 6a: signup's proof-of-work challenge, sealed, keeping
-	// nothing, and 404 whenever signup is (ADR-0051).
-	if len(AnonymousAllowlist) != 15 {
+	// nothing, and 404 whenever signup is (ADR-0051). 17 since 7l: a
+	// Chromecast's two cast links, signed for one file and account (ADR-0077).
+	if len(AnonymousAllowlist) != 17 {
 		t.Errorf("the anonymous surface has changed size: %d entries. "+
 			"That is a security decision — update this assertion deliberately.", len(AnonymousAllowlist))
 	}

@@ -26,6 +26,41 @@ type MetadataService interface {
 	Search(ctx context.Context, q metadata.Query) ([]metadata.Match, error)
 	SearchToRequest(ctx context.Context, q metadata.Query) ([]metadata.Match, error)
 	Details(ctx context.Context, kind metadata.Kind, id int64) (metadata.Details, error)
+	SeasonsToRequest(ctx context.Context, id int64) ([]metadata.Season, error)
+}
+
+// SeasonsToRequest lists a series' seasons and how many episodes each has, so
+// a request can name some of them (ADR-0075).
+func (h *Handlers) SeasonsToRequest(w http.ResponseWriter, r *http.Request) {
+	if h.metadata == nil {
+		writeProblem(w, http.StatusNotImplemented, "no metadata subsystem is wired")
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeProblem(w, http.StatusBadRequest, "not an id")
+		return
+	}
+	seasons, err := h.metadata.SeasonsToRequest(r.Context(), id)
+	switch {
+	case errors.Is(err, metadata.ErrNoProvider):
+		writeProblem(w, http.StatusConflict, "no metadata provider is configured")
+		return
+	case errors.Is(err, metadata.ErrNotFound):
+		writeProblem(w, http.StatusNotFound, "the provider has no such series")
+		return
+	case isProviderFailure(err):
+		writeProblem(w, http.StatusBadGateway, err.Error())
+		return
+	case err != nil:
+		writeAuthzAware(w, err)
+		return
+	}
+	out := make([]map[string]any, 0, len(seasons))
+	for _, s := range seasons {
+		out = append(out, map[string]any{"number": s.Number, "name": s.Name, "episodes": s.Episodes})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"seasons": out})
 }
 
 func healthJSON(h metadata.Health) map[string]any {

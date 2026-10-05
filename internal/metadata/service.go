@@ -258,6 +258,20 @@ func (svc *Service) SearchToRequest(ctx context.Context, q Query) ([]Match, erro
 	return p.Search(ctx, q)
 }
 
+// SeasonsToRequest lists a series' seasons for an account choosing which of
+// them to ask for (ADR-0075).
+func (svc *Service) SeasonsToRequest(ctx context.Context, id int64) ([]Season, error) {
+	if err := authz.RequirePermission(ctx, authz.PermSubmitRequest); err != nil {
+		return nil, err
+	}
+	p := svc.Provider()
+	if p == nil {
+		return nil, ErrNoProvider
+	}
+	d, err := p.Details(ctx, KindSeries, id)
+	return d.Seasons, err
+}
+
 func (svc *Service) Search(ctx context.Context, q Query) ([]Match, error) {
 	if err := authz.RequirePermission(ctx, authz.PermEditLibraryItems); err != nil {
 		return nil, err

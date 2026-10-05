@@ -109,6 +109,9 @@ plan, not a control, and it is listed under "Not yet enforced" instead.
 | A transcode is asked for only by an allowlisted height and whole seconds of start; every ffmpeg argument is built from the probe, never from the request, and it runs in the same sandbox and under the same admission limit as a remux | `playback.TestOnlyAllowlistedHeightsAreAccepted`, `api.TestConvertOptionsAreParsedOrRefused`, `playback.TestTranscodeArgumentsScaleToneMapAndSeek` — mutation-verified (ADR-0071) |
 | `hevc=1` only widens the capability set a conversion is planned against (HEVC, 10-bit, HDR), so a file is copied rather than transcoded; it reaches no ffmpeg argument except the fixed `-tag:v hvc1` for a copied HEVC track. What a conversion holds in memory for a slow reader is capped at 64 MiB, and a reader that leaves stops ffmpeg | `playback.TestABrowserThatDecodesHEVCGetsTheOriginalPicture`, `api.TestConvertOptionsAreParsedOrRefused`, `playback.TestAConvertedStreamIsProducedAheadOfTheReader` — mutation-verified (ADR-0072) |
 | Adopting a `.part` file left by an earlier version renames only names inside the transfer's own directory, because they come from the torrent | `download.TestPartFilesFromAnEarlierVersionAreAdopted` — mutation-verified (ADR-0073) |
+| A download's file is replaced by a link to its library copy only through the download's own `os.Root`, only once the copy is the same size, and never inside a library; a finished download never fetches again, so a link left dangling is never written through | `library.TestPlaceKeepsOneCopyAcrossFilesystems`, `library.TestAShortCopyIsNotLinkedTo`, `library.TestNothingWritesOutsideAVault` (ADR-0076) |
+| A removal request is approved only by somebody who may delete files, and is never auto-approved; it names an item the asker can see | `api.TestARemovalIsAskedForAndOnlyADeleterApprovesIt` (ADR-0075) |
+| A cast link reaches one file as its account and nothing else | `api.TestACastLinkReachesOneFileAsItsAccount`, `api.TestACastLinkExpires`, `api.TestATitleOutOfScopeDoesNotExist` (ADR-0077) |
 | The subtitle cache is named from a file's id and size, never a request, and the stream indices read out come from the probe; the keyframe a copy starts at is read by ffprobe in the sandbox through the descriptor | `playback.TestEmbeddedTracksAreReadOutOnceAndServedFromTheCache`, `playback.TestTheKeyframeACopyStartsAtIsRead`, `playback.TestTheOnlyInputAMediaToolGetsIsTheDescriptor` (ADR-0074) |
 | Automatic acquisition is off unless the configuration turns it on (the Proxmox installer turns it on, ADR-0071), and cannot be on with the download engine off | `config.TestAutomaticAcquisitionIsOffByDefault`, `config.TestAutomaticAcquisitionSettingsThatCannotWorkAreRefused` — mutation-verified (ADR-0030) |
 | It acts on exactly what the Wanted screen lists, and a person who unmonitors an item while a pass runs has the last word | `acquire.TestTheWantedListIsTheWantedScreens` (a differential test against the screen's own queries), `acquire.TestAPersonsChangeDuringAPassWins` — mutation-verified |
@@ -363,7 +366,7 @@ host — that is what it is for — and treat the copy accordingly.
 
 ## The anonymous surface
 
-Twelve routes, listed literally in `internal/api/allowlist.go`:
+Seventeen routes, listed literally in `internal/api/allowlist.go`:
 
 ```
 GET  /login                         POST /api/v1/auth/login
@@ -372,7 +375,14 @@ POST /api/v1/auth/signup            GET  /reset
 POST /api/v1/auth/reset/initiate    POST /api/v1/auth/reset/complete
 GET  /assets/auth/                  GET  /healthz
 GET  /setup                         POST /api/v1/setup
+GET  /api/v1/auth/signup/challenge
+GET  /api/v1/feeds/{token}/calendar.ics
+GET  /api/v1/feeds/{token}/rss
+GET  /api/v1/cast/{token}/convert   GET  /api/v1/cast/{token}/stream
 ```
+
+The feeds and the cast links carry their credential in the path; see *Feed
+tokens* and *Cast links* below.
 
 The two setup routes are first-run only: both handlers check the account count
 on every request and return 404 once any account exists, so the wizard closes
@@ -963,6 +973,24 @@ revoked or suspended account's token answers exactly as a missing route does.
 The addresses are masked in every log line and rate-limited. Anyone who holds an
 address can read that account's calendar and arrivals until it is replaced:
 that is what a calendar subscription is.
+
+## Cast links
+
+A Chromecast fetches a film it is cast from this server itself and cannot sign
+in (ADR-0077). `POST /api/v1/files/{id}/cast`, from a session that may stream a
+file it can see, returns a link: the file, the account and an expiry six hours
+on, with an HMAC-SHA256 over them under a key made at start-up and kept nowhere,
+so a restart ends every link. The two anonymous routes it names,
+`GET /api/v1/cast/{token}/convert` and `/stream`, check the token and then act as
+that account, holding `media.browse` and `media.stream` only, in its scope, and
+only while it may sign in; a wrong, changed or expired link answers 404. They
+answer `Cross-Origin-Resource-Policy: cross-origin` and
+`Access-Control-Allow-Origin: *`, because the Chromecast's player is a page on
+Google's origin. Anyone who holds a link can watch that one film for its six
+hours, which is what casting it is. The content security policy allows three
+script paths on `www.gstatic.com`, Google's Cast sender, the framework it loads
+and Chrome's own sender for its version, and nothing else on that host; the player loads them only when Cast is
+pressed.
 
 ## API tokens
 

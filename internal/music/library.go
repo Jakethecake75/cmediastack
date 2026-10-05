@@ -393,26 +393,12 @@ func (l *Library) ImportAlbum(ctx context.Context, src *library.ContainedSource,
 			res.Skipped = append(res.Skipped, importer.Rejection{Path: rel, Reason: err.Error()})
 			continue
 		}
-		host, err := src.HostPath(rel)
+		// One copy, which the download seeds (ADR-0076).
+		copies, err := library.Place(src, rel, vault, dst)
 		if err != nil {
 			return res, err
 		}
-		hardlinked := true
-		if err := vault.Link(host, dst); err != nil {
-			if !strings.Contains(err.Error(), "cross-device") && !errors.Is(err, fs.ErrInvalid) {
-				return res, err
-			}
-			hardlinked = false
-			in, oerr := src.Open(rel)
-			if oerr != nil {
-				return res, oerr
-			}
-			_, cerr := vault.CopyFrom(in, dst)
-			_ = in.Close()
-			if cerr != nil {
-				return res, cerr
-			}
-		}
+		hardlinked := copies == 1
 		var size int64
 		if info, serr := vault.Stat(dst); serr == nil {
 			size = info.Size()

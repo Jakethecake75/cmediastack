@@ -48,6 +48,14 @@ const (
 	StateFulfilled State = "fulfilled"
 )
 
+// Action is what a request asks to be done (ADR-0075).
+type Action string
+
+const (
+	ActionAdd    Action = "add"
+	ActionRemove Action = "remove"
+)
+
 // Kind is what sort of thing was asked for.
 type Kind string
 
@@ -64,6 +72,13 @@ type Request struct {
 	Year  int
 	Note  string
 	State State
+
+	// TMDBID is the provider's title the requester chose, zero for a request
+	// made in words (ADR-0075).
+	TMDBID int64
+	// Scope is the seasons and episodes asked for; empty is the whole title.
+	Scope  string
+	Action Action
 
 	RequestedBy   *int64
 	RequesterName string
@@ -138,6 +153,12 @@ type NewRequest struct {
 	Year  int
 	Note  string
 	By    int64
+	// TMDBID, Scope and Action as on Request (ADR-0075). Scope is canonical,
+	// from FormatScope. A removal names the item it would remove.
+	TMDBID      int64
+	Scope       string
+	Action      Action
+	MediaItemID int64
 }
 
 // MaxOpenPerUser caps how many outstanding requests one account may hold.
@@ -159,6 +180,17 @@ func (s *Store) Create(ctx context.Context, nr NewRequest) (*Request, bool, erro
 	key := MatchKey(nr.Title, nr.Year)
 	if key == "" {
 		return nil, false, fmt.Errorf("%w: %q", ErrNotAskable, nr.Title)
+	}
+	// Part of a series, or a removal, is a different request from the whole
+	// title fetched (ADR-0075).
+	if nr.Scope != "" {
+		key += "#" + nr.Scope
+	}
+	if nr.Action == "" {
+		nr.Action = ActionAdd
+	}
+	if nr.Action == ActionRemove {
+		key = "remove:" + key
 	}
 
 	var id int64
@@ -196,10 +228,11 @@ func (s *Store) Create(ctx context.Context, nr NewRequest) (*Request, bool, erro
 			res, err := tx.ExecContext(ctx, `
 				INSERT INTO media_request
 				    (kind, title, year, note, match_key, state, requested_by,
-				     requested_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				     requested_at, updated_at, tmdb_id, scope, action, media_item_id)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				string(nr.Kind), strings.TrimSpace(nr.Title), nullYear(nr.Year),
-				strings.TrimSpace(nr.Note), key, string(StatePending), nr.By, now, now)
+				strings.TrimSpace(nr.Note), key, string(StatePending), nr.By, now, now,
+				nullID(nr.TMDBID), nr.Scope, string(nr.Action), nullID(nr.MediaItemID))
 			if err != nil {
 				return fmt.Errorf("request: create: %w", err)
 			}
@@ -226,6 +259,13 @@ func (s *Store) Create(ctx context.Context, nr NewRequest) (*Request, bool, erro
 	return r, !joined, err
 }
 
+func nullID(id int64) any {
+	if id <= 0 {
+		return nil
+	}
+	return id
+}
+
 func nullYear(y int) any {
 	if y <= 0 {
 		return nil
@@ -238,7 +278,8 @@ const selectRequest = `
 	       r.requested_by, COALESCE(ru.username, ''), r.requested_at,
 	       r.decided_by, COALESCE(du.username, ''), r.decided_at,
 	       r.decision_reason, COALESCE(r.info_hash, ''), r.grabbed_at,
-	       r.media_item_id, r.fulfilled_at
+	       r.media_item_id, r.fulfilled_at,
+	       COALESCE(r.tmdb_id, 0), r.scope, r.action
 	FROM media_request r
 	LEFT JOIN app_user ru ON ru.id = r.requested_by
 	LEFT JOIN app_user du ON du.id = r.decided_by
@@ -246,16 +287,17 @@ const selectRequest = `
 
 func scanRequest(row interface{ Scan(...any) error }) (*Request, error) {
 	var r Request
-	var kind, state, requestedAt string
+	var kind, state, requestedAt, action string
 	var decidedAt, grabbedAt, fulfilledAt sql.NullString
 	if err := row.Scan(&r.ID, &kind, &r.Title, &r.Year, &r.Note, &state,
 		&r.RequestedBy, &r.RequesterName, &requestedAt,
 		&r.DecidedBy, &r.DeciderName, &decidedAt,
 		&r.DecisionReason, &r.InfoHash, &grabbedAt,
-		&r.MediaItemID, &fulfilledAt); err != nil {
+		&r.MediaItemID, &fulfilledAt,
+		&r.TMDBID, &r.Scope, &action); err != nil {
 		return nil, err
 	}
-	r.Kind, r.State = Kind(kind), State(state)
+	r.Kind, r.State, r.Action = Kind(kind), State(state), Action(action)
 	r.RequestedAt = parseTS(requestedAt)
 	r.DecidedAt, r.GrabbedAt, r.FulfilledAt = nullTS(decidedAt), nullTS(grabbedAt), nullTS(fulfilledAt)
 	return &r, nil
@@ -435,13 +477,28 @@ func (s *Store) Fulfil(ctx context.Context, infoHash string, mediaItemID int64) 
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE media_request
 		SET state = ?, media_item_id = ?, fulfilled_at = ?, updated_at = ?
-		WHERE state = ? AND ((? <> '' AND info_hash = ?) OR media_item_id = ?)`,
+		WHERE state = ? AND action = 'add'
+		  AND ((? <> '' AND info_hash = ?) OR media_item_id = ?)`,
 		string(StateFulfilled), mediaItemID, now, now,
 		string(StateApproved), hash, hash, mediaItemID)
 	if err != nil {
 		return 0, fmt.Errorf("request: fulfil: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+// MarkFulfilled closes an approved request whose work is done: a removal,
+// once its files are in the trash (ADR-0075).
+func (s *Store) MarkFulfilled(ctx context.Context, id int64) error {
+	now := ts(s.now())
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE media_request SET state = ?, fulfilled_at = ?, updated_at = ?
+		WHERE id = ? AND state = ?`,
+		string(StateFulfilled), now, now, id, string(StateApproved))
+	if err != nil {
+		return fmt.Errorf("request: fulfil: %w", err)
+	}
+	return nil
 }
 
 // LinkedItem is what Store.Link did.
@@ -518,7 +575,10 @@ func (s *Store) Link(ctx context.Context, id, itemID int64) (LinkedItem, error) 
 		// "fulfilled" claims.
 		res, err := tx.ExecContext(ctx, `
 			UPDATE media_request SET state = ?, fulfilled_at = ?, updated_at = ?
-			WHERE id = ? AND state = ?
+			WHERE id = ? AND state = ? AND action = 'add'
+			  -- Part of a series is not there because another part is
+			  -- (ADR-0075): it is fulfilled when a file arrives.
+			  AND scope = ''
 			  AND EXISTS (SELECT 1 FROM media_file WHERE item_id = ?)`,
 			string(StateFulfilled), now, now, id, string(StateApproved), itemID)
 		if err != nil {
@@ -575,7 +635,7 @@ func (s *Store) FulfilOnDisk(ctx context.Context) ([]int64, error) {
 func linkedOnDisk(ctx context.Context, tx db.Execer) ([]int64, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id FROM media_request
-		WHERE state = ? AND media_item_id IS NOT NULL
+		WHERE state = ? AND action = 'add' AND media_item_id IS NOT NULL
 		  AND EXISTS (SELECT 1 FROM media_file f WHERE f.item_id = media_request.media_item_id)
 		ORDER BY id`, string(StateApproved))
 	if err != nil {

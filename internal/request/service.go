@@ -83,6 +83,12 @@ func (svc *Service) Submit(ctx context.Context, nr NewRequest) (Submitted, error
 		return Submitted{}, fmt.Errorf("%w: that title is longer than %d characters", ErrInvalid, MaxTitleLength)
 	case len(nr.Note) > MaxNoteLength:
 		return Submitted{}, fmt.Errorf("%w: that note is longer than %d characters", ErrInvalid, MaxNoteLength)
+	case nr.Action != "" && nr.Action != ActionAdd && nr.Action != ActionRemove:
+		return Submitted{}, fmt.Errorf("%w: action must be add or remove, got %q", ErrInvalid, nr.Action)
+	case nr.Action == ActionRemove && nr.MediaItemID <= 0:
+		return Submitted{}, fmt.Errorf("%w: a removal names the library item to remove", ErrInvalid)
+	case nr.Scope != "" && nr.Kind != KindSeries:
+		return Submitted{}, fmt.Errorf("%w: only a series has seasons and episodes to choose", ErrInvalid)
 	}
 	// A year outside this range is a typo, and a typo in the year is the one
 	// field that silently splits a request off from the one it should have
@@ -99,7 +105,9 @@ func (svc *Service) Submit(ctx context.Context, nr NewRequest) (Submitted, error
 
 	out := Submitted{Request: r, Created: created}
 
-	if created && actor.Role.Permissions.Has(authz.PermAutoApproveOwn) {
+	// Never a removal (ADR-0075): approving one deletes files, which is a
+	// decision for whoever may delete them.
+	if created && nr.Action != ActionRemove && actor.Role.Permissions.Has(authz.PermAutoApproveOwn) {
 		if err := svc.store.Decide(ctx, r.ID, StateApproved, actor.UserID,
 			"auto-approved: the requester's role may approve its own requests"); err != nil {
 			return Submitted{}, err
@@ -232,6 +240,24 @@ func (svc *Service) decide(ctx context.Context, id int64, state State, reason st
 		After:      map[string]any{"state": string(after.State), "reason": reason},
 	})
 	return after, nil
+}
+
+// CompleteRemoval closes an approved removal once its files are in the trash
+// (ADR-0075). Gated on deleting media, the permission the removal used.
+func (svc *Service) CompleteRemoval(ctx context.Context, id int64, detail string) error {
+	if err := authz.RequirePermission(ctx, authz.PermDeleteMediaFiles); err != nil {
+		return err
+	}
+	if err := svc.store.MarkFulfilled(ctx, id); err != nil {
+		return err
+	}
+	svc.write(ctx, audit.Event{
+		Action:     audit.ActionRequestFulfilled,
+		TargetKind: "media_request",
+		TargetID:   fmt.Sprintf("%d", id),
+		Detail:     "removed: " + detail,
+	})
+	return nil
 }
 
 // LinkGrab records that an approved request is being downloaded for.

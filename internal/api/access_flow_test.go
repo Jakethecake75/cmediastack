@@ -298,6 +298,7 @@ func TestATitleOutOfScopeDoesNotExist(t *testing.T) {
 		{http.MethodPut, "/api/v1/files/{id}/position", w.hiddenFile, map[string]any{"position_ms": 60000, "duration_ms": 600000}},
 		{http.MethodDelete, "/api/v1/files/{id}/position", w.hiddenFile, nil},
 		{http.MethodGet, "/api/v1/files/{id}/convert", w.hiddenFile, nil},
+		{http.MethodPost, "/api/v1/files/{id}/cast", w.hiddenFile, nil},
 		{http.MethodGet, "/api/v1/files/{id}/subtitles", w.hiddenFile, nil},
 		{http.MethodGet, "/api/v1/files/{id}/subtitles/{sid}", w.hiddenFile, nil},
 		{http.MethodPost, "/api/v1/files/{id}/subtitles/fetch", w.hiddenFile, map[string]any{"language": "en"}},

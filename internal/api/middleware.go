@@ -190,6 +190,11 @@ func hostOnly(remoteAddr string) string {
 // The CSP is nonce-based with no unsafe-inline: script-src permits only tags
 // carrying this response's nonce, so an injected <script> cannot execute even
 // if output encoding fails somewhere.
+// castScripts is where the Cast sender library, the framework it loads and
+// Chrome's own sender for this version come from (ADR-0077).
+const castScripts = "https://www.gstatic.com/cv/js/sender/ https://www.gstatic.com/cast/sdk/libs/ " +
+	"https://www.gstatic.com/eureka/clank/"
+
 func SecurityHeaders(hstsMaxAge time.Duration) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -198,7 +203,9 @@ func SecurityHeaders(hstsMaxAge time.Duration) Middleware {
 
 			h.Set("Content-Security-Policy", strings.Join([]string{
 				"default-src 'self'",
-				"script-src 'self' 'nonce-" + nonce + "'",
+				// Google's Cast sender, by its three paths and nothing else on
+				// that host: the player loads it to cast (ADR-0077).
+				"script-src 'self' 'nonce-" + nonce + "' " + castScripts,
 				"style-src 'self' 'nonce-" + nonce + "'",
 				"img-src 'self' data:",
 				"media-src 'self' blob:",

@@ -13,6 +13,7 @@ import (
 	"github.com/jakethecake75/cmediastack/internal/importer"
 	"github.com/jakethecake75/cmediastack/internal/library"
 	"github.com/jakethecake75/cmediastack/internal/platform/audit"
+	"github.com/jakethecake75/cmediastack/internal/playback"
 )
 
 // MediaService is the subset of the library the API reads.
@@ -28,6 +29,9 @@ type MediaService interface {
 	// (ADR-0037): the queue names what it is downloading.
 	ItemForQueue(ctx context.Context, id int64) (importer.Item, error)
 	FilesFor(ctx context.Context, itemID int64) ([]importer.File, error)
+	// FileForPlayback reads one file the caller may see (ADR-0077 asks it
+	// before minting a cast link).
+	FileForPlayback(ctx context.Context, fileID int64) (playback.FileRef, error)
 	RecordsFor(ctx context.Context, infoHash string) ([]importer.Record, error)
 	// Film returns one film to search for, or ErrNotAFilm (ADR-0026).
 	Film(ctx context.Context, id int64) (importer.Item, error)

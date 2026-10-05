@@ -96,3 +96,26 @@ func (s *ContainedSource) Exists(rel string) bool {
 	_, err := s.root.Stat(rel)
 	return err == nil
 }
+
+// linkTo replaces rel with a symbolic link to target, the library's copy of it,
+// once that copy is seen to be whole. Through the held root, so rel cannot name
+// anything outside the download; the link is made beside it and renamed over
+// it, so the name never stops resolving.
+func (s *ContainedSource) linkTo(rel string, copied int64, target string) error {
+	info, err := s.root.Lstat(rel)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Size() != copied {
+		return fmt.Errorf("library: %s is not the %d bytes copied", rel, copied)
+	}
+	tmp := rel + ".cmediastack-link"
+	if err := s.root.Symlink(target, tmp); err != nil {
+		return err
+	}
+	if err := s.root.Rename(tmp, rel); err != nil {
+		_ = s.root.Remove(tmp)
+		return err
+	}
+	return nil
+}
