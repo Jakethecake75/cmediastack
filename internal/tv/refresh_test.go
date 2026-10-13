@@ -145,6 +145,52 @@ func TestAFinishedSeasonIsNotFetchedAgain(t *testing.T) {
 	}
 }
 
+// ADR-0078: a season read before episodes' stills were stored is read once
+// more to get them, and then left alone as any settled season is.
+func TestASeasonReadBeforeStillsIsReadOnceMore(t *testing.T) {
+	r := newEpRig(t)
+	eps := providerEpisodes(3, -400)
+	eps[0].StillPath = "one.jpg"
+	p := &fakeEpisodeProvider{
+		seasons:  []metadata.Season{providerSeason(1, 3, -400)},
+		episodes: map[int][]metadata.Episode{1: eps},
+	}
+	ref := newRefresher(r, p, "series")
+	if _, err := ref.Refresh(r.ctx, r.itemID); err != nil {
+		t.Fatal(err)
+	}
+	// As migration 0040 leaves a season that was already here.
+	if _, err := r.raw.ExecContext(r.ctx, `UPDATE season SET stills_read = 0`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.raw.ExecContext(r.ctx, `UPDATE episode SET still_path = ''`); err != nil {
+		t.Fatal(err)
+	}
+
+	p.asked = nil
+	if _, err := ref.Refresh(r.ctx, r.itemID); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.asked) != 1 {
+		t.Fatalf("fetched %v; a settled season with no stills read is asked about once", p.asked)
+	}
+	_, byNumber, err := r.store.Seasons(r.ctx, r.itemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byNumber[1][0].StillPath != "one.jpg" || byNumber[1][1].StillPath != "" {
+		t.Errorf("stills after the re-read: %q, %q", byNumber[1][0].StillPath, byNumber[1][1].StillPath)
+	}
+
+	p.asked = nil
+	if _, err := ref.Refresh(r.ctx, r.itemID); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.asked) != 0 {
+		t.Errorf("fetched %v again; one episode has no still, and that is not a reason to keep asking", p.asked)
+	}
+}
+
 // A season that gained an episode IS fetched again.
 //
 // Without this the test above passes just as well against a refresher that

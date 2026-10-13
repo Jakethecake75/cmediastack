@@ -47,6 +47,10 @@ func (f *fakeEpisodes) ForSearch(_ context.Context, id int64) (library.SearchSub
 	return *f.subject, nil
 }
 
+func (f *fakeEpisodes) Still(context.Context, int64) (int64, string, error) {
+	return 0, "", library.ErrNoSuchEpisode
+}
+
 func (f *fakeEpisodes) ForSeasonSearch(_ context.Context, itemID int64, season int) (library.SeasonSearchSubject, error) {
 	if f.season == nil || f.season.ItemID != itemID || f.season.Season != season {
 		return library.SeasonSearchSubject{}, library.ErrNoSuchSeason

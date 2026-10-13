@@ -108,6 +108,10 @@ func (h *Handlers) TitleArtwork(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusNotFound, "no artwork has been cached for that title")
 		return
 	}
+	if r.URL.Query().Get("kind") == "backdrop" {
+		h.serveBackdrop(w, r, it)
+		return
+	}
 	h.servePoster(w, r, "tmdb", it.TMDBID)
 }
 

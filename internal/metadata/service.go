@@ -46,6 +46,8 @@ type Service struct {
 	mu       sync.RWMutex
 	provider Provider
 	health   Health
+	// titles is what TitleDetails last read, by kind and id (ADR-0078).
+	titles map[titleKey]keptDetails
 }
 
 // SettingStore is the tiny slice of the identity store this needs.
@@ -309,4 +311,65 @@ func (svc *Service) write(ctx context.Context, actor *authz.Principal, detail st
 		// No Before/After: the value is a credential, and the audit log is
 		// read by more people than the setting is.
 	})
+}
+
+// titleKept is how long a title's details are served from memory.
+const titleKept = 24 * time.Hour
+
+// maxTitlesKept bounds the memory; past it everything is dropped and read
+// again as it is asked for.
+const maxTitlesKept = 4000
+
+type titleKey struct {
+	kind Kind
+	id   int64
+}
+
+type keptDetails struct {
+	details Details
+	at      time.Time
+}
+
+// TitleDetails is what the provider says about a title in the library, for
+// its page (ADR-0078): the overview, genres, score and backdrop.
+//
+// Gated on browsing, and the caller has already read the title in its scope.
+// Kept for a day, so opening a title costs the provider one request a day.
+//
+// ponytail: in memory, so a restart reads each title again, and two first
+// readers of one title both ask. Store it on media_item if either matters.
+func (svc *Service) TitleDetails(ctx context.Context, kind Kind, id int64) (Details, error) {
+	if err := authz.RequirePermission(ctx, authz.PermBrowse); err != nil {
+		return Details{}, err
+	}
+	p := svc.Provider()
+	if p == nil {
+		return Details{}, ErrNoProvider
+	}
+	key, now := titleKey{kind, id}, svc.now()
+	svc.mu.RLock()
+	kept, ok := svc.titles[key]
+	svc.mu.RUnlock()
+	if ok && now.Sub(kept.at) < titleKept {
+		return kept.details, nil
+	}
+	d, err := p.Details(ctx, kind, id)
+	if err != nil {
+		return Details{}, err
+	}
+	svc.mu.Lock()
+	if svc.titles == nil || len(svc.titles) >= maxTitlesKept {
+		svc.titles = map[titleKey]keptDetails{}
+	}
+	svc.titles[key] = keptDetails{details: d, at: now}
+	svc.mu.Unlock()
+	return d, nil
+}
+
+// ImageBase is where the provider's images are fetched from.
+func (svc *Service) ImageBase() string {
+	if t, ok := svc.Provider().(*TMDB); ok && t.ImageBase() != "" {
+		return t.ImageBase()
+	}
+	return FallbackImageBase
 }

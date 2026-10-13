@@ -4,7 +4,7 @@
 Run `go generate ./internal/docs/` after changing routes;
 `docs.TestTheGeneratedDocumentsAreCurrent` fails while this file is stale.
 
-157 routes. **17 are reachable without a session**; every one of those also appears in `api.AnonymousAllowlist`, and `Router.register` panics at startup if the two ever disagree.
+159 routes. **17 are reachable without a session**; every one of those also appears in `api.AnonymousAllowlist`, and `Router.register` panics at startup if the two ever disagree.
 
 - **51 hidden** — 404 rather than 403 when unauthorized, so the route's existence is not disclosed (requirements §7.3).
 - **19 session-only** — an API token may not use them whatever its scope. Credential management lives here.
@@ -135,6 +135,7 @@ Run `go generate ./internal/docs/` after changing routes;
 
 | Method | Path | Requires | Notes |
 |---|---|---|---|
+| GET | `/api/v1/episodes/{id}/still` | `media.browse` |  |
 | POST | `/api/v1/episodes/{id}/search` | `acquisition.search` |  |
 | PUT | `/api/v1/episodes/{id}/monitored` | `library.edit` |  |
 
@@ -212,6 +213,7 @@ Run `go generate ./internal/docs/` after changing routes;
 | GET | `/api/v1/media/{id}/albums` | `media.browse` |  |
 | GET | `/api/v1/media/{id}/artwork` | `media.browse` |  |
 | GET | `/api/v1/media/{id}/children` | `media.browse` |  |
+| GET | `/api/v1/media/{id}/details` | `media.browse` |  |
 | GET | `/api/v1/media/{id}/original` | `media.download_original` |  |
 | POST | `/api/v1/media` | `library.edit` |  |
 | POST | `/api/v1/media/{id}/search` | `acquisition.search` |  |

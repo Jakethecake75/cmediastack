@@ -94,14 +94,20 @@
           <option value="">Everything</option>
           <option value="movie">Films</option>
           <option value="series">Series</option>
+          <option value="artist">Music</option>
+          <option value="book">Books</option>
         </select>
         <input id="library-filter" type="search" placeholder="Filter by title"
                autocomplete="off" maxlength="200">
         <span class="spacer"></span>
         <span id="library-count" class="hint"></span>
       </div>
-      <div id="library-list" class="list"></div>
-      <div id="library-detail" class="detail" hidden></div>
+      <div id="library-list" class="poster-grid"></div>
+    </section>
+
+    <section class="view" data-view="title" hidden>
+      <!-- A title's own page (ADR-0078), drawn by app.js. -->
+      <div id="title-page" class="tp"></div>
     </section>
 
     <section class="view" data-view="watch" hidden>

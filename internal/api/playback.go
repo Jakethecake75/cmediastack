@@ -554,6 +554,7 @@ func (h *Handlers) ContinueWatching(w http.ResponseWriter, r *http.Request) {
 		}
 		if it.TMDBID > 0 { // as the library list: only an identified title has artwork
 			row["poster"] = artworkPath(it.ItemID)
+			row["backdrop"] = artworkPath(it.ItemID) + "?kind=backdrop"
 		}
 		if it.Year > 0 {
 			row["year"] = it.Year

@@ -36,6 +36,8 @@
   var VIEWS = [
     { id: 'home',      label: 'Home',      section: 'home', perm: 'media.browse' },
     { id: 'library',   label: 'Library',   section: 'home', perm: 'media.browse' },
+    /* A title's own page, reached from its poster: #title/<id> (ADR-0078). */
+    { id: 'title',     label: 'Title',     section: 'home', perm: 'media.browse', hidden: true },
     /* Reached from a Play button rather than from the nav — "Watch" with
      * nothing chosen is an empty screen with no way forward. */
     { id: 'watch',     label: 'Watch',     section: 'home', perm: 'media.browse', hidden: true },
@@ -279,7 +281,8 @@
   var MERGED = { add: 'find', ask: 'find', search: 'find', requests: 'find', discover: 'find' };
 
   function currentView() {
-    var want = (window.location.hash || '').replace(/^#/, '');
+    /* What follows a slash is the view's own: #title/12 is the title view. */
+    var want = (window.location.hash || '').replace(/^#/, '').split('/')[0];
     want = MERGED[want] || want;
     var allowed = visibleViews();
     for (var i = 0; i < allowed.length; i++) {
@@ -306,6 +309,9 @@
       }
     }
     buildSubnav(section, target);
+    /* Pictures get the width of the window; forms keep a column (ADR-0078). */
+    document.querySelector('.content').classList.toggle('wide',
+      target === 'home' || target === 'library' || target === 'title');
     $('error').hidden = true;
     /* Adding for a request lasts while the Add screen is open: leaving it is
      * leaving that errand, and the next visit to Add is an ordinary one. */
@@ -349,14 +355,20 @@
   // Home (ADR-0069): rows of posters for watching
   // -------------------------------------------------------------------------
 
-  function posterArt(title, poster) {
+  /* A picture, or the title where there is none. When it cannot be loaded the
+   * fallback is tried before giving up: a backdrop falls back to the poster. */
+  function posterArt(title, poster, fallback) {
     var art = el('div', 'poster');
-    if (poster) {
+    var first = poster || fallback;
+    if (first) {
       var img = document.createElement('img');
-      img.src = poster;
+      img.src = first;
       img.alt = '';
       img.loading = 'lazy';
-      img.addEventListener('error', function () { art.replaceChild(el('div', 'poster-none', title), img); });
+      img.addEventListener('error', function () {
+        if (fallback && fallback !== first) { first = img.src = fallback; return; }
+        art.replaceChild(el('div', 'poster-none', title), img);
+      });
       art.appendChild(img);
     } else {
       art.appendChild(el('div', 'poster-none', title));
@@ -364,10 +376,11 @@
     return art;
   }
 
-  function tile(title, sub, poster, onOpen, progress) {
-    var t = el('button', 'tile');
+  /* wide is a landscape card (ADR-0078): a backdrop, or an episode's still. */
+  function tile(title, sub, poster, onOpen, progress, wide, fallback) {
+    var t = el('button', wide ? 'tile wide' : 'tile');
     t.type = 'button';
-    var art = posterArt(title, poster);
+    var art = posterArt(title, poster, fallback);
     if (progress > 0) {
       var bar = el('div', 'tile-progress');
       var fill = el('div', 'tile-progress-fill');
@@ -382,32 +395,37 @@
     return t;
   }
 
+  /* A heading and a row of tiles. With more, the heading is the way to the
+   * rest of them. */
   function shelf(box, heading, tiles, more) {
     if (!tiles.length) { return; }
     var sec = el('section', 'shelf');
-    var head = el('div', 'shelf-head');
-    head.appendChild(el('h3', null, heading));
-    if (more) { head.appendChild(button('See all', 'ghost', more)); }
-    sec.appendChild(head);
+    var h = el('h3');
+    if (more) {
+      h.appendChild(button(heading + ' ›', 'shelf-more', more));
+    } else {
+      h.textContent = heading;
+    }
+    sec.appendChild(h);
     var row = el('div', 'shelf-row');
     tiles.forEach(function (t) { row.appendChild(t); });
     sec.appendChild(row);
     box.appendChild(sec);
   }
 
+  /* A title's own page (ADR-0078). */
   function openTitle(id) {
-    openAfterLoad = id;
-    window.location.hash = '#library';
-    loaders.library();
+    window.location.hash = '#title/' + id;
   }
 
   function seeAll(kind) {
     return function () {
-      window.location.hash = '#library';
       $('library-kind').value = kind;
-      loaders.library();
+      window.location.hash = '#library';
     };
   }
+
+  function seasonName(n) { return n === 0 ? 'Specials' : 'Season ' + n; }
 
   loaders.home = function () {
     var box = $('home-rows');
@@ -418,21 +436,19 @@
     ]).then(function (got) {
       var going = got[0], items = got[1];
       clear(box);
-      shelf(box, 'Continue watching', going.map(function (c) {
-        var code = c.season || c.episode ? 'S' + String(c.season).padStart(2, '0') + 'E' + String(c.episode).padStart(2, '0') : '';
+      shelf(box, 'Continue Watching', going.map(function (c) {
+        var episode = c.season || c.episode;
         var left = Math.max(0, Math.round((c.duration_ms - c.position_ms) / 60000));
-        return tile(c.title, [code, left ? left + ' min left' : ''].filter(Boolean).join(' · '), c.poster,
-          function () { watch(c.file_id, c.title + (code ? ' ' + code : '')); },
-          c.duration_ms ? c.position_ms / c.duration_ms : 0);
+        var what = episode ? 'S' + c.season + ':E' + c.episode : (c.year ? String(c.year) : '');
+        return tile(c.title, [what, left ? left + ' min left' : ''].filter(Boolean).join(' · '), c.backdrop,
+          function () { watch(c.file_id, c.title + (episode ? ' S' + pad(c.season) + 'E' + pad(c.episode) : ''), c.year); },
+          c.duration_ms ? c.position_ms / c.duration_ms : 0, true, c.poster);
       }));
-      var byAdded = items.slice().sort(function (a, b) { return String(b.added_at).localeCompare(String(a.added_at)); });
-      var asTile = function (it) {
-        return tile(it.title, it.year ? String(it.year) : (it.author || ''), it.poster, function () { openTitle(it.id); });
-      };
-      shelf(box, 'Recently added', byAdded.slice(0, 20).map(asTile));
-      [['movie', 'Movies'], ['series', 'TV Shows'], ['artist', 'Music'], ['book', 'Books']].forEach(function (k) {
-        var of = items.filter(function (it) { return it.kind === k[0]; });
-        shelf(box, k[1], of.slice(0, 30).map(asTile), seeAll(k[0]));
+      var newest = items.slice().sort(function (a, b) { return String(b.added_at).localeCompare(String(a.added_at)); });
+      [['movie', 'Latest Movies'], ['series', 'Latest TV Shows'], ['artist', 'Latest Music'], ['book', 'Latest Books']].forEach(function (k) {
+        shelf(box, k[1], newest.filter(function (it) { return it.kind === k[0]; }).slice(0, 30).map(function (it) {
+          return tile(it.title, it.year ? String(it.year) : (it.author || ''), it.poster, function () { openTitle(it.id); });
+        }), seeAll(k[0]));
       });
       if (!box.firstChild) {
         empty(box, can('library.edit')
@@ -797,7 +813,57 @@
 
         list.appendChild(item);
       });
+      settleOldRequests(res.body.requests);
     });
+  }
+
+  /* Requests approved before approving added the title (ADR-0078) carry no
+   * provider id. When somebody who may approve and may edit the library reads
+   * the list, each is finished as approval now would have: the provider is
+   * searched for its title, and one exact match of title and year is added,
+   * linked to the request, and searched for. Once per request per page load;
+   * anything less certain keeps its Add to the library button. */
+  var settledRequests = {};
+
+  function settleOldRequests(requests) {
+    if (!can('request.approve') || !can('library.edit')) { return; }
+    var todo = requests.filter(function (rq) {
+      return rq.state === 'approved' && rq.action !== 'remove' && !rq.media_item_id &&
+        !rq.info_hash && !rq.tmdb_id && rq.year && !settledRequests[rq.id];
+    });
+    var added = [];
+    var next = function () {
+      var rq = todo.shift();
+      if (!rq) {
+        if (added.length) {
+          ok('Added to the library for requests approved earlier: ' + added.join(', ') + '.');
+          loadRequests();
+        }
+        return;
+      }
+      settledRequests[rq.id] = true;
+      var kind = rq.kind === 'series' ? 'series' : 'movie';
+      api('GET', '/api/v1/metadata/search?kind=' + kind + '&title=' + encodeURIComponent(rq.title) +
+        '&year=' + rq.year).then(function (found) {
+        var same = ((found.status === 200 && found.body && found.body.matches) || []).filter(function (m) {
+          return m.year === rq.year && String(m.title).toLowerCase() === rq.title.toLowerCase();
+        });
+        if (same.length !== 1) { return next(); }
+        var body = { kind: kind, tmdb_id: same[0].provider_id };
+        if (kind === 'series') { body.monitor = 'all'; }
+        api('POST', '/api/v1/media', body).then(function (add) {
+          var item = add.body && add.body.item;
+          var there = add.status === 201 ||
+            (add.status === 409 && add.body && add.body.conflict === 'already_in_library');
+          if (!there || !item) { return next(); }
+          api('POST', '/api/v1/requests/' + rq.id + '/item', { media_item_id: item.id }).then(function (linked) {
+            if (linked.status === 200) { added.push(rq.title); }
+            next();
+          });
+        });
+      });
+    };
+    next();
   }
 
   // -------------------------------------------------------------------------
@@ -1976,27 +2042,15 @@
     if (!shown.length) {
       empty(list, libraryItems.length
         ? 'Nothing matches that filter.'
-        : 'The library is empty. Add a series from Add, scan a root folder that ' +
-          'already holds media, or grab something from Search.');
+        : 'The library is empty. Add a title from Search, or scan a root folder that ' +
+          'already holds media.');
       return;
     }
 
     clear(list);
     shown.forEach(function (it) {
-      var r = row(it.title + (it.year ? ' (' + it.year + ')' : ''), kindWord(it.kind));
-      var a = actions(r);
-      a.appendChild(button('Files', 'ghost', function () { showItem(it.id); }));
-      if (can('library.delete')) {
-        a.appendChild(button('Delete', 'danger', function (btn) {
-          btn.disabled = true;
-          api('DELETE', '/api/v1/admin/media/' + it.id).then(function (res) {
-            if (res.status !== 200) { btn.disabled = false; return fail(res, 'could not delete'); }
-            ok((res.body && res.body.note) || 'Moved to trash.');
-            loaders.library();
-          });
-        }));
-      }
-      list.appendChild(r);
+      list.appendChild(tile(it.title, it.year ? String(it.year) : (it.author || kindWord(it.kind)),
+        it.poster, function () { openTitle(it.id); }));
     });
   }
 
@@ -2088,139 +2142,319 @@
     return r;
   }
 
+  /* minutes(88) -> "1h 28m". */
+  function minutes(n) {
+    if (!n || n < 0) { return ''; }
+    var h = Math.floor(n / 60), m = n % 60;
+    return [h ? h + 'h' : '', m ? m + 'm' : ''].filter(Boolean).join(' ');
+  }
+
+  function episodeCode(e) { return 'S' + pad(e.season) + 'E' + pad(e.number); }
+
+  /* A provider's date is a day, kept as midnight UTC: read in UTC, or it is
+   * the day before for anybody west of Greenwich. */
+  function airDate(value) {
+    return new Date(value).toLocaleDateString(undefined,
+      { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  }
+
+  /* One episode on a series' page: its still, its number and name, and when it
+   * aired — or why it cannot be played. */
+  function episodeCard(it, e, going) {
+    var sub;
+    if (e.have) {
+      sub = [e.aired_at && airDate(e.aired_at), minutes(e.runtime_minutes)].filter(Boolean).join(' · ');
+    } else if (e.announced) {
+      sub = 'Announced';
+    } else {
+      sub = new Date(e.aired_at) > new Date() ? 'Airs ' + airDate(e.aired_at) : 'Missing';
+    }
+    var place = going.filter(function (c) { return e.have && c.file_id === e.file_id; })[0];
+    var t = tile(e.number + '. ' + (e.title || 'Episode ' + e.number), sub, e.still, function () {
+      watch(e.file_id, it.title + ' ' + episodeCode(e), it.year);
+    }, place && place.duration_ms ? place.position_ms / place.duration_ms : 0, true);
+    if (!e.have) {
+      t.disabled = true;
+      t.classList.add('absent');
+    }
+    return t;
+  }
+
+  function deleteTitleRow(it) {
+    var r = row('Delete this title', 'It leaves the library and its files go to the trash, ' +
+      'recoverable until they are purged.');
+    actions(r).appendChild(button('Delete', 'danger', function (btn) {
+      btn.disabled = true;
+      api('DELETE', '/api/v1/admin/media/' + it.id).then(function (res) {
+        if (res.status !== 200) { btn.disabled = false; return fail(res, 'could not delete'); }
+        ok((res.body && res.body.note) || 'Moved to trash.');
+        window.location.hash = '#library';
+      });
+    }));
+    return r;
+  }
+
+  /* The title in the address: #title/<id>. */
+  loaders.title = function () {
+    var id = Number((window.location.hash || '').split('/')[1]);
+    if (!id) { window.location.hash = '#library'; return; }
+    window.scrollTo(0, 0);
+    showItem(id);
+  };
+
+  /* A title's page (ADR-0078): what it is and a way to play it, then — under
+   * Files and options — everything that can be done to it. */
   function showItem(id) {
-    var box = $('library-detail');
+    var page = $('title-page');
     return api('GET', '/api/v1/media/' + id).then(function (res) {
-      if (res.status !== 200 || !res.body) { return fail(res, 'could not read that item'); }
-      var it = res.body;
-
-      clear(box);
-      box.hidden = false;
-      box.appendChild(el('h3', null, it.title + (it.year ? ' (' + it.year + ')' : '')));
-      if (it.author) { box.appendChild(el('div', 'muted', 'by ' + it.author)); }
-      /* A quality profile and a certification are a film's and a series'
-       * (ADR-0044): music and books have neither. */
-      var video = it.kind === 'movie' || it.kind === 'series';
-      if (video) {
-        box.appendChild(titleProfileRow(it));
-        box.appendChild(titleRatingRow(it));
-      }
-      if (can('request.submit')) { box.appendChild(reportProblemRow(it)); }
-      if (video && can('request.submit') && !can('library.delete')) { box.appendChild(removalRow(it)); }
-
-      /* A series shows what it is MISSING before what it has. The episode list
-       * comes from the provider, never from the files — a list built from
-       * files would be complete by construction and never show a gap
-       * (ADR-0022). Rendered into its own container so the files below do not
-       * wait on it. */
-      if (it.kind === 'series') {
-        var eps = el('div', null);
-        box.appendChild(eps);
-        showEpisodes(eps, it.id);
-      }
-      if (it.kind === 'artist') {
-        var albums = el('div', 'list');
-        box.appendChild(albums);
-        showAlbums(albums, it.id);
-      }
-
-      var files = it.files || [];
-      if (!files.length) {
-        /* A series added from the provider has nothing on disk until its first
-         * episode is imported (ADR-0025), and that is not a fault. */
-        if (it.kind === 'series') {
-          box.appendChild(el('p', 'empty', 'Nothing of this series is on disk yet.'));
-          return;
-        }
-        /* An artist's albums above say what is held (ADR-0044). */
-        if (it.kind === 'artist') { return; }
-        /* Nor has a film (ADR-0026): it is wanted, and is searched for from
-         * here. Whatever is grabbed from this search is filed under this film,
-         * whatever the release calls itself. */
-        var name = it.title + (it.year ? ' (' + it.year + ')' : '');
-        var unwanted = it.monitored === false;
-        var wanted = row('Not on disk yet', unwanted
-          ? 'Not monitored: it is kept in the library and is not on the Wanted list, so ' +
-            'nothing searches for it or downloads it.'
-          : 'It is on the Wanted list until it is.');
-        var a = actions(wanted);
-        if (can('acquisition.search') && it.kind === 'movie') {
-          a.appendChild(button('Search', null, function () {
-            searchForFilm(it.id, name, wanted);
-          }));
-        }
-        /* A book's search is the title's own route, ranked by format (ADR-0049). */
-        if (can('acquisition.search') && it.kind === 'book') {
-          a.appendChild(button('Search', null, function () {
-            searchForBook(it.id, name + (it.author ? ' by ' + it.author : ''), wanted);
-          }));
-        }
-        /* Monitoring decides whether it is wanted and so — with automatic
-         * acquisition on — whether it is fetched (ADR-0030). */
-        if (can('library.edit')) {
-          a.appendChild(button(unwanted ? 'Monitor' : 'Unmonitor', 'ghost', function (btn) {
-            btn.disabled = true;
-            api('PUT', '/api/v1/media/' + it.id + '/monitored', { monitored: unwanted })
-              .then(function (u) {
-                if (u.status !== 200) { btn.disabled = false; return fail(u, 'could not change monitoring'); }
-                ok((u.body && u.body.note) || 'Changed.');
-                showItem(it.id);
-              });
-          }));
-        }
-        box.appendChild(wanted);
+      if (res.status !== 200 || !res.body) {
+        empty(page, failure(res, 'could not read that title'));
         return;
       }
-      if (it.kind === 'series') { box.appendChild(el('h3', null, 'Files')); }
-      files.forEach(function (f) {
-        var label = f.path;
-        if (f.season !== undefined && f.episode !== undefined) {
-          label = 'S' + pad(f.season) + 'E' + pad(f.episode) +
-            (f.episode_last ? '-E' + pad(f.episode_last) : '') + ' — ' + f.path;
-        }
-        var r = row(label, null);
-        r.appendChild(facts([
-          ['Quality', f.quality],
-          ['Size', bytes(f.bytes)],
-          ['Group', f.group],
-          /* Said plainly: the same bytes may be being served to strangers, and
-           * deleting here does not stop that. */
-          ['Shared with a download', f.hardlinked ? 'yes — still seeding' : 'no'],
-          ['Imported', when(f.imported_at)]
-        ]));
-        if (f.release) { r.appendChild(el('div', 'muted small', f.release)); }
-        var acts = actions(r);
-        /* A book is read elsewhere: its file is downloaded, not played (ADR-0049). */
-        if (it.kind !== 'book') {
-          acts.appendChild(button('Play', 'primary', function () {
-            watch(f.id, it.title, it.year);
-          }));
-        }
-        /* A subtitle in each wanted language, from OpenSubtitles (ADR-0055). */
-        if (can('library.edit') && (it.kind === 'movie' || it.kind === 'series')) {
-          subtitleButtons(acts, f.id);
-        }
-        /* One file to the trash, the title kept (ADR-0053). Recoverable from
-         * the trash, so it acts at once, as a title's delete does. */
-        if (can('library.delete')) {
-          acts.appendChild(button('Delete file', 'danger', function (btn) {
-            btn.disabled = true;
-            api('DELETE', '/api/v1/admin/files/' + f.id).then(function (res) {
-              if (res.status !== 200) { btn.disabled = false; return fail(res, 'could not delete the file'); }
-              ok((res.body && (res.body.warning || res.body.note)) || 'Moved to trash.');
+      var it = res.body;
+      var video = it.kind === 'movie' || it.kind === 'series';
+      var files = it.files || [];
+      /* Redrawn after something under Files and options changed: it stays open. */
+      var before = page.querySelector('.tp-manage');
+      var wasOpen = !!before && before.open && page.getAttribute('data-item') === String(id);
+      page.setAttribute('data-item', String(id));
+      clear(page);
+
+      var backdrop = el('div', 'tp-backdrop');
+      page.appendChild(backdrop);
+      var hero = el('div', 'tp-hero');
+      var art = posterArt(it.title, it.poster);
+      art.className = 'poster tp-poster';
+      hero.appendChild(art);
+      var info = el('div', 'tp-info');
+      info.appendChild(el('h1', 'tp-title', it.title));
+      var meta = el('div', 'tp-meta');
+      var acts = el('div', 'tp-actions');
+      var next = el('div', 'tp-next');
+      var tagline = el('div', 'tp-tagline');
+      var overview = el('p', 'tp-overview');
+      [meta, acts, next, tagline, overview].forEach(function (n) { info.appendChild(n); });
+      hero.appendChild(info);
+      page.appendChild(hero);
+      var seasons = el('div', 'tp-seasons');
+      page.appendChild(seasons);
+
+      /* The line of facts, drawn again as each answer arrives. */
+      var known = {};
+      var paintMeta = function () {
+        clear(meta);
+        if (known.score) { meta.appendChild(el('span', 'tp-score', '★ ' + known.score.toFixed(1))); }
+        [it.year && String(it.year), it.author && 'by ' + it.author, known.seasons, minutes(known.runtime)]
+          .filter(Boolean).forEach(function (text) { meta.appendChild(el('span', null, text)); });
+        if (it.rating && it.rating.rated) { meta.appendChild(el('span', 'tp-cert', it.rating.certification)); }
+        if (known.genres) { meta.appendChild(el('span', null, known.genres)); }
+      };
+      paintMeta();
+
+      var playButton = function (label, fileId, name) {
+        var b = button(label, 'primary tp-play', function () { watch(fileId, name, it.year); });
+        b.insertBefore(svgIcon('play'), b.firstChild);
+        acts.appendChild(b);
+      };
+      /* This account's unfinished places in this title. */
+      var going = !video ? Promise.resolve([]) : api('GET', '/api/v1/me/continue').then(function (r) {
+        return ((r.status === 200 && r.body && r.body.items) || []).filter(function (c) { return c.item_id === it.id; });
+      });
+
+      if (it.kind === 'movie' && files.length) {
+        going.then(function (mine) {
+          playButton(mine.length ? 'Resume' : 'Play', mine.length ? mine[0].file_id : files[0].id, it.title);
+        });
+      } else if (it.kind === 'movie') {
+        acts.appendChild(el('span', 'badge warn', 'Not on disk yet'));
+      }
+
+      if (it.kind === 'series') {
+        Promise.all([api('GET', '/api/v1/media/' + it.id + '/children'), going]).then(function (got) {
+          var all = (got[0].status === 200 && got[0].body && got[0].body.seasons) || [];
+          var mine = got[1];
+          var regular = all.filter(function (s) { return s.number > 0; });
+          if (regular.length) { known.seasons = regular.length + (regular.length === 1 ? ' Season' : ' Seasons'); }
+          paintMeta();
+          var onDisk = [];
+          regular.concat(all.filter(function (s) { return s.number === 0; })).forEach(function (s) {
+            var eps = s.episodes || [];
+            eps.forEach(function (e) { if (e.have) { onDisk.push(e); } });
+            shelf(seasons, seasonName(s.number), eps.map(function (e) { return episodeCard(it, e, mine); }));
+          });
+          /* Where this account left off, or the first episode there is. */
+          var resume = mine.length ? onDisk.filter(function (e) { return e.file_id === mine[0].file_id; })[0] : null;
+          var first = resume || onDisk[0];
+          if (!first) {
+            acts.appendChild(el('span', 'badge warn', 'Nothing on disk yet'));
+            return;
+          }
+          var code = 'S' + first.season + ':E' + first.number;
+          playButton((resume ? 'Resume ' : 'Play ') + code, first.file_id, it.title + ' ' + episodeCode(first));
+          next.textContent = code + ' - ' + (first.title || 'Episode ' + first.number);
+        });
+      }
+
+      /* What the provider says about it. Without an answer the page simply
+       * has no overview and no backdrop. */
+      if (video) {
+        api('GET', '/api/v1/media/' + it.id + '/details').then(function (d) {
+          var b = d.status === 200 && d.body ? d.body : {};
+          known.score = b.score;
+          known.genres = (b.genres || []).slice(0, 3).join(', ');
+          /* A series' is the length of one episode, which its cards say. */
+          known.runtime = it.kind === 'movie' ? b.runtime_minutes : 0;
+          paintMeta();
+          tagline.textContent = b.tagline || '';
+          overview.textContent = b.overview || '';
+          if (b.backdrop) {
+            var img = document.createElement('img');
+            img.src = b.backdrop;
+            img.alt = '';
+            img.addEventListener('error', function () { clear(backdrop); });
+            backdrop.appendChild(img);
+          }
+        });
+      }
+
+      var manage = document.createElement('details');
+      manage.className = 'tp-manage';
+      manage.appendChild(el('summary', null, 'Files and options'));
+      var opts = el('div', 'list');
+      manage.appendChild(opts);
+      page.appendChild(manage);
+      /* Open where it is the point of the page: music and books, which have
+       * nothing above to play, and a film that is not on disk yet. */
+      manage.open = wasOpen || !video || (it.kind === 'movie' && !files.length);
+      titleOptions(opts, it);
+      if (can('library.delete')) { opts.appendChild(deleteTitleRow(it)); }
+    });
+  }
+
+  /* Everything that can be done to a title, under Files and options on its
+   * page: how it is fetched and rated, reporting a problem, its episodes'
+   * monitoring and searches, and its files. */
+  function titleOptions(box, it) {
+    var video = it.kind === 'movie' || it.kind === 'series';
+    if (video) {
+      box.appendChild(titleProfileRow(it));
+      box.appendChild(titleRatingRow(it));
+    }
+    if (can('request.submit')) { box.appendChild(reportProblemRow(it)); }
+    if (video && can('request.submit') && !can('library.delete')) { box.appendChild(removalRow(it)); }
+
+    /* A series shows what it is MISSING before what it has. The episode list
+     * comes from the provider, never from the files — a list built from
+     * files would be complete by construction and never show a gap
+     * (ADR-0022). Rendered into its own container so the files below do not
+     * wait on it. */
+    if (it.kind === 'series') {
+      var eps = el('div', null);
+      box.appendChild(eps);
+      showEpisodes(eps, it.id);
+    }
+    if (it.kind === 'artist') {
+      var albums = el('div', 'list');
+      box.appendChild(albums);
+      showAlbums(albums, it.id);
+    }
+
+    var files = it.files || [];
+    if (!files.length) {
+      /* A series added from the provider has nothing on disk until its first
+       * episode is imported (ADR-0025), and that is not a fault. */
+      if (it.kind === 'series') {
+        box.appendChild(el('p', 'empty', 'Nothing of this series is on disk yet.'));
+        return;
+      }
+      /* An artist's albums above say what is held (ADR-0044). */
+      if (it.kind === 'artist') { return; }
+      /* Nor has a film (ADR-0026): it is wanted, and is searched for from
+       * here. Whatever is grabbed from this search is filed under this film,
+       * whatever the release calls itself. */
+      var name = it.title + (it.year ? ' (' + it.year + ')' : '');
+      var unwanted = it.monitored === false;
+      var wanted = row('Not on disk yet', unwanted
+        ? 'Not monitored: it is kept in the library and is not on the Wanted list, so ' +
+          'nothing searches for it or downloads it.'
+        : 'It is on the Wanted list until it is.');
+      var a = actions(wanted);
+      if (can('acquisition.search') && it.kind === 'movie') {
+        a.appendChild(button('Search', null, function () {
+          searchForFilm(it.id, name, wanted);
+        }));
+      }
+      /* A book's search is the title's own route, ranked by format (ADR-0049). */
+      if (can('acquisition.search') && it.kind === 'book') {
+        a.appendChild(button('Search', null, function () {
+          searchForBook(it.id, name + (it.author ? ' by ' + it.author : ''), wanted);
+        }));
+      }
+      /* Monitoring decides whether it is wanted and so — with automatic
+       * acquisition on — whether it is fetched (ADR-0030). */
+      if (can('library.edit')) {
+        a.appendChild(button(unwanted ? 'Monitor' : 'Unmonitor', 'ghost', function (btn) {
+          btn.disabled = true;
+          api('PUT', '/api/v1/media/' + it.id + '/monitored', { monitored: unwanted })
+            .then(function (u) {
+              if (u.status !== 200) { btn.disabled = false; return fail(u, 'could not change monitoring'); }
+              ok((u.body && u.body.note) || 'Changed.');
               showItem(it.id);
             });
-          }));
-        }
-        /* The file as stored, saved rather than played (ADR-0038). The
-         * response is an attachment, so the page stays where it is. */
-        if (can('media.download_original')) {
-          acts.appendChild(button('Download', 'ghost', function () {
-            window.location.href = '/api/v1/media/' + it.id + '/original?file=' + f.id;
-          }));
-        }
-        box.appendChild(r);
-      });
+        }));
+      }
+      box.appendChild(wanted);
+      return;
+    }
+    if (it.kind === 'series') { box.appendChild(el('h3', null, 'Files')); }
+    files.forEach(function (f) {
+      var label = f.path;
+      if (f.season !== undefined && f.episode !== undefined) {
+        label = 'S' + pad(f.season) + 'E' + pad(f.episode) +
+          (f.episode_last ? '-E' + pad(f.episode_last) : '') + ' — ' + f.path;
+      }
+      var r = row(label, null);
+      r.appendChild(facts([
+        ['Quality', f.quality],
+        ['Size', bytes(f.bytes)],
+        ['Group', f.group],
+        /* Said plainly: the same bytes may be being served to strangers, and
+         * deleting here does not stop that. */
+        ['Shared with a download', f.hardlinked ? 'yes — still seeding' : 'no'],
+        ['Imported', when(f.imported_at)]
+      ]));
+      if (f.release) { r.appendChild(el('div', 'muted small', f.release)); }
+      var acts = actions(r);
+      /* A book is read elsewhere: its file is downloaded, not played (ADR-0049). */
+      if (it.kind !== 'book') {
+        acts.appendChild(button('Play', 'primary', function () {
+          watch(f.id, it.title, it.year);
+        }));
+      }
+      /* A subtitle in each wanted language, from OpenSubtitles (ADR-0055). */
+      if (can('library.edit') && (it.kind === 'movie' || it.kind === 'series')) {
+        subtitleButtons(acts, f.id);
+      }
+      /* One file to the trash, the title kept (ADR-0053). Recoverable from
+       * the trash, so it acts at once, as a title's delete does. */
+      if (can('library.delete')) {
+        acts.appendChild(button('Delete file', 'danger', function (btn) {
+          btn.disabled = true;
+          api('DELETE', '/api/v1/admin/files/' + f.id).then(function (res) {
+            if (res.status !== 200) { btn.disabled = false; return fail(res, 'could not delete the file'); }
+            ok((res.body && (res.body.warning || res.body.note)) || 'Moved to trash.');
+            showItem(it.id);
+          });
+        }));
+      }
+      /* The file as stored, saved rather than played (ADR-0038). The
+       * response is an attachment, so the page stays where it is. */
+      if (can('media.download_original')) {
+        acts.appendChild(button('Download', 'ghost', function () {
+          window.location.href = '/api/v1/media/' + it.id + '/original?file=' + f.id;
+        }));
+      }
+      box.appendChild(r);
     });
   }
 
@@ -2331,7 +2565,9 @@
   function seasonBlock(s, itemID, reload) {
     var wrap = el('div', 'list compact');
     var head = el('div', 'item');
-    var name = s.number === 0 ? 'Specials' : (s.name || 'Season ' + s.number);
+    /* Not the provider's name for it: a British series' is "Series 1"
+     * (ADR-0078). */
+    var name = seasonName(s.number);
     head.appendChild(el('div', 'title', name));
 
     /* Both numbers when they differ. "have 3 of 9" measured against the rows
@@ -2591,16 +2827,7 @@
       .then(function (res) {
         if (res.status !== 200 || !res.body) { return fail(res, 'could not read the library'); }
         libraryItems = res.body.items || [];
-        $('library-detail').hidden = true;
         renderLibrary();
-        /* Opened from somewhere else — the Add screen. Done here, after the
-         * list has landed, because this callback hides the detail pane: opening
-         * the item first would race it and lose. */
-        if (openAfterLoad) {
-          var id = openAfterLoad;
-          openAfterLoad = null;
-          showItem(id).then(function () { $('library-detail').scrollIntoView(); });
-        }
       });
   };
 
@@ -2625,8 +2852,6 @@
     ['none', 'None — follow it without wanting anything']
   ];
 
-  /* The item the library view opens once its list has loaded; see there. */
-  var openAfterLoad = null;
   /* The approved request the Add screen is adding for, if it is (ADR-0028):
    * what it asked for, so the screen can search for that and link whatever is
    * added to it. */
@@ -2925,7 +3150,7 @@
     var picked = [];
     seasons.forEach(function (s) {
       var line = el('div', 'scope-season');
-      var season = tick((s.number === 0 ? 'Specials' : 'Season ' + s.number) +
+      var season = tick(seasonName(s.number) +
         ' (' + s.episodes.length + ' episode' + (s.episodes.length === 1 ? '' : 's') + ')');
       line.appendChild(season.label);
       var eps = el('div', 'scope-episodes');
@@ -3329,10 +3554,7 @@
   }
 
   function openInLibrary(id) {
-    return button('Open in the library', 'ghost', function () {
-      openAfterLoad = id;
-      window.location.hash = '#library';
-    });
+    return button('Open in the library', 'ghost', function () { openTitle(id); });
   }
 
   // -------------------------------------------------------------------------

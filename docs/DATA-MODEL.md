@@ -4,7 +4,7 @@
 Run `go generate ./internal/docs/` after adding a migration;
 `docs.TestTheGeneratedDocumentsAreCurrent` fails while this file is stale.
 
-39 migrations applied ([1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39]). SQLite with `foreign_keys=ON` and WAL (ADR-0004) — the declared references below are enforced, not decorative.
+40 migrations applied ([1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40]). SQLite with `foreign_keys=ON` and WAL (ADR-0004) — the declared references below are enforced, not decorative.
 
 ## `account_request`
 
@@ -221,6 +221,7 @@ season_number is carried here as well as on the season row. It is denormalised d
 | `provider_episode_id` | integer | yes | — | — |
 | `monitored` | integer | **no** | `1` | — |
 | `updated_at` | text | **no** | — | — |
+| `still_path` | text | **no** | `''` | — |
 
 Indexes: `idx_episode_aired`, `idx_episode_item`
 
@@ -785,6 +786,7 @@ One season of a series.
 | `aired_at` | text | yes | — | — |
 | `monitored` | integer | **no** | `1` | — |
 | `updated_at` | text | **no** | — | — |
+| `stills_read` | integer | **no** | `0` | — |
 
 ## `session`
 

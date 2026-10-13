@@ -268,6 +268,7 @@ func episodeInputs(eps []metadata.Episode) []library.EpisodeInput {
 			Overview:   e.Overview,
 			Aired:      e.Aired,
 			Runtime:    e.Runtime,
+			StillPath:  e.StillPath,
 		})
 	}
 	return out
@@ -361,6 +362,10 @@ func (r *Refresher) worthFetching(s metadata.Season, known map[int]library.Seaso
 	}
 	if stored.EpisodeCount != s.Episodes {
 		// Gained or lost an episode.
+		return true
+	}
+	if !stored.StillsRead {
+		// Read before episodes' stills were stored (ADR-0078): once more.
 		return true
 	}
 	if len(bySeason[s.Number]) == 0 {

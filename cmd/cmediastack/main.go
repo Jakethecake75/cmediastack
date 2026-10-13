@@ -1137,6 +1137,11 @@ func runApp(cfg config.Config, logger *slog.Logger, logRing *logging.Ring) error
 			api.Authenticate(auth, metricsAuditSink{inner: auditLog, reg: reg}),
 		},
 	)
+	// A nil *artwork.Store in the interface would not be nil to the handlers.
+	var titleImages api.ImageFetcher
+	if artStore != nil {
+		titleImages = artStore
+	}
 	api.RegisterRoutes(router, api.New(api.Deps{
 		Identity: svc, Auth: auth, Tasks: scheduler, Egress: guard,
 		Indexers: indexerStore, Search: searchSvc, Profiles: profileStore,
@@ -1144,6 +1149,7 @@ func runApp(cfg config.Config, logger *slog.Logger, logRing *logging.Ring) error
 		Scanner: scanner, Deleter: imp, Tickets: tickets, Grabs: searchSvc,
 		Requests: requestSvc, Metadata: metadataSvc,
 		Identify: identifySvc, Artwork: artCache, Audit: auditLog,
+		Titles: metadataSvc, Images: titleImages,
 		Playback: playbackSvc,
 		Logs:     logRing,
 		Issues:   issue.NewService(database, auditLog, time.Now),

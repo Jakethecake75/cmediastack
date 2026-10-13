@@ -63,6 +63,8 @@ type Handlers struct {
 	searchSoon     func(string) bool
 	adder          LibraryAdder
 	artwork        ArtworkReader
+	titles         TitleDetailsSource
+	images         ImageFetcher
 	backups        BackupService
 	acquisition    AcquisitionService
 	notifications  NotificationService
@@ -141,6 +143,11 @@ type Deps struct {
 	// Artwork reads the poster cache. Nil means the instance serves no
 	// pictures, which is a supported configuration.
 	Artwork ArtworkReader
+	// Titles is what the provider says about an identified title, and Images
+	// fetches its backdrop and its episodes' stills into the artwork cache
+	// (ADR-0078). Nil means a title's page has neither.
+	Titles TitleDetailsSource
+	Images ImageFetcher
 	// Backups takes and lists the database's encrypted backups (ADR-0029).
 	// Nil means the routes answer 501.
 	Backups BackupService
@@ -211,6 +218,7 @@ func New(d Deps) *Handlers {
 		scanner: d.Scanner, deleter: d.Deleter, trashRetention: d.TrashRetention,
 		tickets: d.Tickets, grabs: d.Grabs, requests: d.Requests,
 		metadata: d.Metadata, identify: d.Identify, artwork: d.Artwork,
+		titles: d.Titles, images: d.Images,
 		playback:      d.Playback,
 		migrate:       d.Migrate,
 		episodes:      d.Episodes,

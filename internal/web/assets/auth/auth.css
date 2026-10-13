@@ -7,11 +7,11 @@
 
 :root {
   color-scheme: dark;
-  --bg: #0e1116;
-  --surface: #161b22;
-  --line: #2a323d;
-  --text: #e6edf3;
-  --muted: #8b96a5;
+  --bg: #101010;
+  --surface: #1a1a1a;
+  --line: #303030;
+  --text: #f0f0f0;
+  --muted: #9a9a9a;
   --accent: #4c8dff;
   --accent-ink: #ffffff;
   --danger: #ff6b6b;

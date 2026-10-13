@@ -3,7 +3,7 @@
 Hand this file to a new session to resume. It is the authoritative statement of
 what exists.
 
-**Last updated:** 2026-10-05
+**Last updated:** 2026-10-12
 **Current phase:** 5 (Music and books) — Phase 4's increments 4a–4z and 4aa–4ai complete, and 5a–5g: Phase 5 is complete. Phase 6 works through the known gaps: 6a–6n. Eight of them are
 library and acquisition work done while Phase 4 was open: 4g (migrating from
 Radarr), 4k (episode tracking), 4l (searching for a wanted episode), 4m
@@ -53,7 +53,7 @@ Phase 6 stops at 6n (2026-10-03): the owner deferred audiobooks and anime's
 absolute numbering, to be added if they are needed.
 Phase 7 is the Proxmox deployment: 7a sets a SOCKS5 proxy from the web and adds
 Getting started, with the install scripts and v0.1.0; 7b (v0.1.1) fixes what the
-first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added, 7i (v0.4.1, v0.4.2) plays in a full-window player that keeps up, 7j (v0.4.3) lets the player load its own stream, keeps downloads across a restart and casts, 7k (v0.4.4) keeps the sound in step, reads subtitles out of a film once, and always shows the cast button, and 7l (v0.5.0) adds an approved request to the library by itself, lets a request name seasons or episodes, lets a User ask for a removal, keeps one copy of a file imported across filesystems, and casts from the player to a Chromecast.
+first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added, 7i (v0.4.1, v0.4.2) plays in a full-window player that keeps up, 7j (v0.4.3) lets the player load its own stream, keeps downloads across a restart and casts, 7k (v0.4.4) keeps the sound in step, reads subtitles out of a film once, and always shows the cast button, and 7l (v0.5.0) adds an approved request to the library by itself, lets a request name seasons or episodes, lets a User ask for a removal, keeps one copy of a file imported across filesystems, and casts from the player to a Chromecast, and 7m gives a title its own page, makes Home and the library pictures, calls a season a Season, and adds the requests approved before v0.5.0.
 **Scope change, 2026-09-26:** the operator is starting a new library rather than
 migrating one. Migrating from Sonarr is dropped; the Radarr importer (4g) stays,
 and does nothing unless a Radarr database is placed in its directory
@@ -66,9 +66,9 @@ and does nothing unless a Radarr database is placed in its directory
 | | |
 |---|---|
 | Go packages | 38 |
-| Tests | 1508, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Tests | 1515, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached (run again at 6l, after 6h made `golang.org/x/net/html` reached code). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
-| Routes registered | 157 (17 anonymous, 51 admin-hidden, 19 session-only). **0 of 157 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
+| Routes registered | 159 (17 anonymous, 51 admin-hidden, 19 session-only). **0 of 159 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
 | **Can you log in?** | **Yes, in a browser.** First run → wizard → login → authenticator enrollment → working session |
 | **Is there a UI?** | **Yes.** No build step, no third-party frontend code |
@@ -5653,6 +5653,51 @@ Media Source stream to a Chromecast.
 
 Casting is untested against a real Chromecast: none is on this network.
 
+### Increment 7m — a title's page, a library of pictures, old requests added ✅
+
+Asked for after v0.5.0, with three screens of Emby beside ours: the site
+should look like that, above all a series should open on a page about the
+series and not on its files; seasons were called *Series 1*, *Series 2*; and
+the requests approved before v0.5.0 still read *approved — not in the library
+yet*. [ADR-0078](docs/adr/0078-a-title-has-a-page-and-home-shows-pictures.md)
+was written first.
+
+**What was found.** The page showed the provider's own name for a season, and
+TMDB names a British series' seasons *Series 1*. The old requests carry no
+provider id (migration 0039 came with v0.5.0), so approving again was not
+possible and nothing ever added them.
+
+| What | How |
+|---|---|
+| **A title's page** | `#title/<id>`: backdrop, poster, score, year, seasons, certification, genres, Play or Resume, the overview; a series has a row of episode cards per season, each with its still. The old page is under **Files and options**, with deleting the title |
+| **Details** | `GET /api/v1/media/{id}/details` asks the provider about an identified title, in the caller's scope, kept in memory for a day |
+| **Backdrop** | The title's artwork route with `?kind=backdrop`, through the artwork cache; a series' kept apart from a film's with the same id |
+| **Stills** | `episode.still_path` (migration 0040), read with the season; `GET /api/v1/episodes/{id}/still`. A season read before this is read once more (`season.stills_read`), and every series is due at the next refresh |
+| **Home** | *Continue Watching* as wide cards with a backdrop, then *Latest Movies*, *Latest TV Shows*, music and books; a heading opens the library on that kind |
+| **Library** | A grid of posters, each opening its title's page; music and books can be chosen |
+| **Look** | A neutral dark palette, the sign-in pages too; Home, the library and a title use the window's width |
+| **Season** | *Season N* and *Specials*, whatever the provider calls them |
+| **Old requests** | When somebody who may approve and edit opens the requests list, an approved request with no provider id is searched for, and one exact match of title and year is added, linked and searched for. Done in the page with that person's session; no background task may add titles |
+
+#### Verified
+
+| Claim | How it is established |
+|---|---|
+| A title's details are read in its scope, and the provider is not asked about a hidden or unidentified title | `api.TestATitlesDetailsAreReadInItsScope`, `api.TestATitleOutOfScopeDoesNotExist` |
+| A backdrop is fetched by the provider's filename into the cache, a series' apart from a film's, and never for a hidden title | `api.TestABackdropIsServedFromTheCache` |
+| An episode's still is named in its series' children and served in scope; an episode with none names none | `api.TestAnEpisodesStillIsServedInScope` |
+| The provider's answers carry the backdrop, score, tagline and stills | `metadata.TestDetailsCarryTheBackdropAndScore`, `metadata.TestEpisodesCarryTheirStill` |
+| Opening a title asks the provider once a day, and only for an account that may browse | `metadata.TestTitleDetailsAreKeptForADay` |
+| A settled season read before stills were stored is read once more, and not again | `tv.TestASeasonReadBeforeStillsIsReadOnceMore` |
+| In Chromium, on the running binary: Home, the library, a series' and a film's page at 1600 and 390 pixels wide; seasons the provider named *Series 1* read *Season 1*; Play says *Resume S2:E2* for an episode part-watched; Back from the player returns to the title's page | Headless Chrome over CDP against a seeded instance |
+| In Chromium: of three requests approved in words, the one with a single exact match is added and reads *in your library*; the one with two matches and the one with none keep **Add to the library…** | The same run, the provider's search and add answered by the test |
+
+No provider key was available for the run, so the overview, the backdrop and
+the provider's search were answered by the test in the browser, and the
+pictures were placed in the artwork cache. The routes behind them are covered
+by the tests above. Not built: cast and crew, trailers, a mark on what has
+been watched.
+
 ---
 
 ## Decisions locked
@@ -5736,6 +5781,7 @@ Casting is untested against a real Chromecast: none is on this network.
 | 75 | An approved request adds its title and starts the search; a request may name seasons or episodes; a User may ask for a removal, approved only by somebody who may delete; Downloads stable; Clear; a theme switch | [0075](docs/adr/0075-requests-add-themselves-seasons-removals.md) |
 | 76 | Across filesystems an imported file is copied and the download's file becomes a link to it; a finished download never fetches again | [0076](docs/adr/0076-one-copy-seeded-from-the-library.md) |
 | 77 | Casting with Google's Cast sender: the Chromecast fetches the film by a link signed for one file and account | [0077](docs/adr/0077-casting-to-a-chromecast.md) |
+| 78 | A title has its own page, with the provider's details kept for a day and its backdrop and stills through the artwork cache; Home and the library are pictures; a season is a Season; requests approved before v0.5.0 are added by the approver's page | [0078](docs/adr/0078-a-title-has-a-page-and-home-shows-pictures.md) |
 | 9 | Opaque server-side sessions, not JWTs | See the header comment in `internal/identity/session.go` — immediate revocation is a hard requirement, and a self-contained token cannot do it without the database lookup a JWT exists to avoid |
 
 ### Defaults taken in the absence of an answer — override any of these

@@ -114,6 +114,12 @@ type Details struct {
 	// Released is the release or first-air date, zero when unknown.
 	Released time.Time
 	Genres   []string
+	// Tagline, BackdropPath and Score are for a title's page (ADR-0078). The
+	// backdrop is a filename, as PosterPath is; Score is the provider's
+	// average out of ten, zero when nobody has voted.
+	Tagline      string
+	BackdropPath string
+	Score        float64
 	// Seasons is empty for a film and for a series whose seasons were not
 	// requested.
 	Seasons []Season
@@ -150,6 +156,9 @@ type Episode struct {
 	Aired time.Time
 	// Runtime is minutes, zero when unknown.
 	Runtime int
+	// StillPath is the provider's filename for the episode's picture
+	// (ADR-0078), empty when it has none.
+	StillPath string
 }
 
 // Health is what a provider reports about itself.

@@ -378,6 +378,10 @@ type tmdbDetails struct {
 
 	IMDbID  string `json:"imdb_id"`
 	Runtime int    `json:"runtime"`
+	// For a title's page (ADR-0078).
+	Tagline      string  `json:"tagline"`
+	BackdropPath string  `json:"backdrop_path"`
+	VoteAverage  float64 `json:"vote_average"`
 	// Television was documented to report a LIST of typical episode lengths.
 	// In practice it is usually EMPTY: the live API returns [] for Severance,
 	// and apparently for most series. Kept because it is still populated for
@@ -447,9 +451,12 @@ func (t *TMDB) Details(ctx context.Context, kind Kind, providerID int64) (Detail
 			PosterPath:    strings.TrimPrefix(d.PosterPath, "/"),
 			Popularity:    d.Popularity,
 		},
-		IMDbID:   firstNonEmpty(d.IMDbID, d.ExternalIDs.IMDbID),
-		Runtime:  d.Runtime,
-		Released: dateOf(d.date()),
+		IMDbID:       firstNonEmpty(d.IMDbID, d.ExternalIDs.IMDbID),
+		Runtime:      d.Runtime,
+		Released:     dateOf(d.date()),
+		Tagline:      d.Tagline,
+		BackdropPath: strings.TrimPrefix(d.BackdropPath, "/"),
+		Score:        d.VoteAverage,
 	}
 	// Three sources, in descending order of how much they mean. A film has
 	// "runtime" and that is the answer. A series usually has neither of the
@@ -605,6 +612,7 @@ type tmdbSeason struct {
 		Overview      string `json:"overview"`
 		AirDate       string `json:"air_date"`
 		Runtime       int    `json:"runtime"`
+		StillPath     string `json:"still_path"`
 	} `json:"episodes"`
 }
 
@@ -640,8 +648,9 @@ func (t *TMDB) Episodes(ctx context.Context, seriesID int64, season int) ([]Epis
 			// dateOf returns the zero time for "" and for an unparseable date,
 			// which is exactly the ANNOUNCED case: TMDB lists a future episode
 			// with air_date null long before anyone has scheduled it.
-			Aired:   dateOf(e.AirDate),
-			Runtime: e.Runtime,
+			Aired:     dateOf(e.AirDate),
+			Runtime:   e.Runtime,
+			StillPath: strings.TrimPrefix(e.StillPath, "/"),
 		})
 	}
 	return out, nil

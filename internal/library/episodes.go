@@ -65,6 +65,9 @@ type Season struct {
 	EpisodeCount int
 	Aired        time.Time
 	Monitored    bool
+	// StillsRead says the season's episodes were read since their stills were
+	// stored (ADR-0078). One that was not is read once more.
+	StillsRead bool
 }
 
 // Episode is one episode, whether or not this instance has the file.
@@ -82,6 +85,9 @@ type Episode struct {
 	RuntimeMinutes  int
 	ProviderEpisode int64
 	Monitored       bool
+	// StillPath is the provider's filename for the episode's picture, empty
+	// when it has none (ADR-0078).
+	StillPath string
 
 	// HaveFileID is the file covering this episode, zero when there is none.
 	//
@@ -135,6 +141,8 @@ type EpisodeInput struct {
 	Overview   string
 	Aired      time.Time
 	Runtime    int
+	// StillPath is the provider's filename for its picture (ADR-0078).
+	StillPath string
 }
 
 // Upsert records what the provider says a series contains.
@@ -262,6 +270,10 @@ func (s *EpisodeStore) upsert(ctx context.Context, tx db.Execer, itemID int64, s
 		if in.Episodes == nil {
 			continue
 		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE season SET stills_read = 1 WHERE id = ?`, seasonID); err != nil {
+			return fmt.Errorf("library: recording season %d: %w", in.Number, err)
+		}
 
 		keep := make([]any, 0, len(in.Episodes))
 		for _, e := range in.Episodes {
@@ -271,8 +283,8 @@ func (s *EpisodeStore) upsert(ctx context.Context, tx db.Execer, itemID int64, s
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO episode (item_id, season_id, season_number, number,
 				                     title, overview, aired_at, runtime_minutes,
-				                     provider_episode_id, monitored, updated_at)
-				VALUES (?,?,?,?,?,?,?,?,?,?,?)
+				                     provider_episode_id, monitored, updated_at, still_path)
+				VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
 				ON CONFLICT(item_id, season_number, number) DO UPDATE SET
 					season_id           = excluded.season_id,
 					title               = excluded.title,
@@ -280,10 +292,11 @@ func (s *EpisodeStore) upsert(ctx context.Context, tx db.Execer, itemID int64, s
 					aired_at            = excluded.aired_at,
 					runtime_minutes     = excluded.runtime_minutes,
 					provider_episode_id = excluded.provider_episode_id,
-					updated_at          = excluded.updated_at`,
+					updated_at          = excluded.updated_at,
+					still_path          = excluded.still_path`,
 				itemID, seasonID, in.Number, e.Number, e.Title, e.Overview,
 				nullableTime(e.Aired), e.Runtime, nullableID(e.ProviderID),
-				seasonMonitored, now); err != nil {
+				seasonMonitored, now, e.StillPath); err != nil {
 				return fmt.Errorf("library: recording S%02dE%02d: %w",
 					in.Number, e.Number, err)
 			}
@@ -388,7 +401,7 @@ func (s *EpisodeStore) Seasons(ctx context.Context, itemID int64) ([]Season, map
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, item_id, number, name, overview, episode_count, aired_at, monitored
+		SELECT id, item_id, number, name, overview, episode_count, aired_at, monitored, stills_read
 		FROM season WHERE item_id = ? ORDER BY number`, itemID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("library: reading seasons: %w", err)
@@ -399,13 +412,14 @@ func (s *EpisodeStore) Seasons(ctx context.Context, itemID int64) ([]Season, map
 	for rows.Next() {
 		var sn Season
 		var aired sql.NullString
-		var monitored int
+		var monitored, stillsRead int
 		if err := rows.Scan(&sn.ID, &sn.ItemID, &sn.Number, &sn.Name, &sn.Overview,
-			&sn.EpisodeCount, &aired, &monitored); err != nil {
+			&sn.EpisodeCount, &aired, &monitored, &stillsRead); err != nil {
 			return nil, nil, fmt.Errorf("library: reading seasons: %w", err)
 		}
 		sn.Aired = parseNullTime(aired)
 		sn.Monitored = monitored == 1
+		sn.StillsRead = stillsRead == 1
 		seasons = append(seasons, sn)
 	}
 	if err := rows.Err(); err != nil {
@@ -431,7 +445,7 @@ func (s *EpisodeStore) Seasons(ctx context.Context, itemID int64) ([]Season, map
 const episodeSelect = `
 	SELECT e.id, e.item_id, e.season_id, e.season_number, e.number, e.title,
 	       e.overview, e.aired_at, e.runtime_minutes, e.provider_episode_id,
-	       e.monitored,
+	       e.monitored, e.still_path,
 	       COALESCE(f.id, 0), COALESCE(f.relative_path, '')
 	FROM episode e
 	LEFT JOIN media_file f
@@ -458,7 +472,7 @@ func scanEpisodes(rows *sql.Rows) ([]Episode, error) {
 		var monitored int
 		if err := rows.Scan(&e.ID, &e.ItemID, &e.SeasonID, &e.SeasonNumber, &e.Number,
 			&e.Title, &e.Overview, &aired, &e.RuntimeMinutes, &providerID,
-			&monitored, &e.HaveFileID, &path); err != nil {
+			&monitored, &e.StillPath, &e.HaveFileID, &path); err != nil {
 			return nil, fmt.Errorf("library: reading episodes: %w", err)
 		}
 		e.Aired = parseNullTime(aired)
@@ -842,6 +856,29 @@ func (s *EpisodeStore) ApplyMonitoring(ctx context.Context, tx db.Execer, itemID
 
 // ErrNoSuchEpisode means the episode does not exist.
 var ErrNoSuchEpisode = errors.New("library: no such episode")
+
+// Still returns the provider's id and picture filename for an episode of a
+// series the caller may see (ADR-0078). ErrNoSuchEpisode covers an episode
+// out of scope and one with no picture: neither has one to show.
+func (s *EpisodeStore) Still(ctx context.Context, episodeID int64) (int64, string, error) {
+	if err := authz.RequirePermission(ctx, authz.PermBrowse); err != nil {
+		return 0, "", err
+	}
+	visible, vargs := Visible(ctx, "i")
+	var providerID int64
+	var still string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(e.provider_episode_id, 0), e.still_path
+		FROM episode e JOIN media_item i ON i.id = e.item_id
+		WHERE e.id = ? AND `+visible, append([]any{episodeID}, vargs...)...).Scan(&providerID, &still)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && (providerID <= 0 || still == "")) {
+		return 0, "", ErrNoSuchEpisode
+	}
+	if err != nil {
+		return 0, "", fmt.Errorf("library: reading an episode's still: %w", err)
+	}
+	return providerID, still, nil
+}
 
 // SearchSubject is what a search for one episode needs: the episode, and the
 // series it belongs to.

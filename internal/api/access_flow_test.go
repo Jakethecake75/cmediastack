@@ -54,6 +54,9 @@ type scopeWorld struct {
 	asked []string
 	// subtitleProvider answers subtitle searches (ADR-0055).
 	subtitleProvider *fakeSubtitles
+	// titles and images are a title's page's details and pictures (ADR-0078).
+	titles *fakeTitles
+	images *fakeImages
 }
 
 type fakeArtwork struct{ dir string }
@@ -150,9 +153,14 @@ func newScopeWorld(t *testing.T) *scopeWorld {
 	for _, id := range []int64{w.shownSeries, w.hiddenSeries} {
 		season := library.SeasonInput{Number: 1, Name: "Season 1", EpisodeCount: 2}
 		for n := 1; n <= 2; n++ {
+			// The first of each has a still, the second none (ADR-0078).
+			still := ""
+			if n == 1 {
+				still = "ep1.jpg"
+			}
 			season.Episodes = append(season.Episodes, library.EpisodeInput{
 				ProviderID: id*100 + int64(n), Number: n, Title: "Episode " + strconv.Itoa(n),
-				Aired: r.clk.now().AddDate(0, 0, -30+n)})
+				Aired: r.clk.now().AddDate(0, 0, -30+n), StillPath: still})
 		}
 		if err := episodes.Upsert(ctx, id, []library.SeasonInput{season}); err != nil {
 			t.Fatal(err)
@@ -174,6 +182,7 @@ func newScopeWorld(t *testing.T) *scopeWorld {
 	}
 
 	w.posters = &fakeArtwork{dir: t.TempDir()}
+	w.titles, w.images = &fakeTitles{}, &fakeImages{art: w.posters}
 	for _, id := range []int64{w.shownTMDB, w.hiddenTMDB} {
 		p := filepath.Join(w.posters.dir, "poster", "tmdb", strconv.FormatInt(id, 10)+"-w342.jpg")
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -216,6 +225,7 @@ func newScopeWorld(t *testing.T) *scopeWorld {
 		Roots: r.roots, Media: r.media, Scanner: r.scanner, Deleter: r.scanner,
 		Tickets: r.tickets, Grabs: searcher, Requests: r.requests, Audit: r.audit,
 		Episodes: episodes, Identify: idSvc, Playback: pb, Artwork: w.posters,
+		Titles: w.titles, Images: w.images,
 		Calendar: episodes, Arrivals: r.media, BaseURL: "https://media.example.com/",
 		Issues:         issue.NewService(r.database, r.audit, r.clk.now),
 		Discover:       w.discover,
@@ -276,6 +286,8 @@ func TestATitleOutOfScopeDoesNotExist(t *testing.T) {
 		// Not built yet (501 to everybody); here so that when they are, they
 		// are held to the same rule.
 		{http.MethodGet, "/api/v1/media/{id}/artwork", w.hiddenByRoot, nil},
+		{http.MethodGet, "/api/v1/media/{id}/details", w.hiddenByRoot, nil},
+		{http.MethodGet, "/api/v1/episodes/{id}/still", w.hiddenEpisode, nil},
 		{http.MethodGet, "/api/v1/media/{id}/original", w.hiddenByRoot, nil},
 		{http.MethodGet, "/api/v1/media/{id}/children", w.hiddenSeries, nil},
 		{http.MethodGet, "/api/v1/media/{id}/albums", w.hiddenArtist, nil},

@@ -140,6 +140,10 @@ func RegisterRoutes(rt *Router, h *Handlers) {
 	rt.Admin(http.MethodPost, "/api/v1/admin/media/{id}/refresh-episodes", authz.PermSystemSettings, h.or(h.RefreshEpisodes))
 	// A title's poster, keyed by the title so its scope decides (ADR-0038).
 	rt.Permission(http.MethodGet, "/api/v1/media/{id}/artwork", authz.PermBrowse, h.or(h.TitleArtwork))
+	// A title's page (ADR-0078): what the provider says about it, and an
+	// episode's still. Both read in the caller's scope.
+	rt.Permission(http.MethodGet, "/api/v1/media/{id}/details", authz.PermBrowse, h.or(h.MediaDetails))
+	rt.Permission(http.MethodGet, "/api/v1/episodes/{id}/still", authz.PermBrowse, h.or(h.EpisodeStill))
 	// What is popular (ADR-0043): the provider's lists, fetched once in six
 	// hours for everybody, so browsing spends nothing.
 	rt.Permission(http.MethodGet, "/api/v1/discover/{section}", authz.PermBrowse, h.or(h.Discover))

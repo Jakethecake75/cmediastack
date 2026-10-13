@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -40,6 +41,9 @@ type EpisodeService interface {
 	ForSearch(ctx context.Context, episodeID int64) (library.SearchSubject, error)
 	// ForSeasonSearch returns one season of a series and its listed episodes.
 	ForSeasonSearch(ctx context.Context, itemID int64, season int) (library.SeasonSearchSubject, error)
+	// Still names an episode's picture, for a caller who may see its series
+	// (ADR-0078).
+	Still(ctx context.Context, episodeID int64) (int64, string, error)
 }
 
 // EpisodeRefresher asks the provider what a series contains.
@@ -61,6 +65,10 @@ func episodeJSON(e library.Episode) map[string]any {
 	}
 	if e.RuntimeMinutes > 0 {
 		row["runtime_minutes"] = e.RuntimeMinutes
+	}
+	// The URL, not the provider's filename, as a poster's is (ADR-0078).
+	if e.StillPath != "" && e.ProviderEpisode > 0 {
+		row["still"] = fmt.Sprintf("/api/v1/episodes/%d/still", e.ID)
 	}
 	switch {
 	case e.Announced():
