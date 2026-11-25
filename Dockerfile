@@ -45,7 +45,10 @@
 FROM mwader/static-ffmpeg:7.1@sha256:a8090df5f5608daef387e1b2e93b98aaacb4d92153ad904e7d715c725724fca4 AS ffmpeg
 
 # --- build -------------------------------------------------------------------
-FROM golang:1.26-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS build
+# Go 1.26.11. The digest pins the Go release the binary is built with, so the
+# standard library's fixes arrive only when it is moved: when Trivy fails on
+# the binary's stdlib, this is the line.
+FROM golang:1.26-bookworm@sha256:ea47ee45f1284d60f9cc09cb2c3bb4f508c256b640bd8bb30342ff13d1adcb52 AS build
 
 WORKDIR /src
 
