@@ -19,7 +19,9 @@
 // the authenticated application's API client, or an unauthenticated visitor
 // could enumerate the entire API surface by reading it. The two directories are
 // self-contained — they share no file — so the boundary cannot be eroded by an
-// import that looks harmless.
+// import that looks harmless. The one crossing goes the safe way: every page,
+// the app's included, loads assets/auth/remote.js, a television remote's keys,
+// which calls no API (ADR-0079).
 //
 // # No inline script or style
 //

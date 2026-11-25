@@ -309,6 +309,8 @@
       }
     }
     buildSubnav(section, target);
+    /* A television's remote starts in the player on the picture (ADR-0079). */
+    if (target === 'watch' && document.documentElement.classList.contains('tv')) { $('watch-player').focus(); }
     /* Pictures get the width of the window; forms keep a column (ADR-0078). */
     document.querySelector('.content').classList.toggle('wide',
       target === 'home' || target === 'library' || target === 'title');
@@ -4931,8 +4933,16 @@
       player.addEventListener(ev, showControls, { passive: true });
     });
 
+    /* A control reached by keys brings the controls back into view. */
+    player.addEventListener('focusin', showControls);
+
     /* The keys, while the player is open. Typing in a field, or a key a
-     * focused button or slider already answers, is left alone. */
+     * focused button or slider already answers, is left alone. On a
+     * television (ADR-0079) the arrows also have to reach the controls, so
+     * left and right seek only from the picture itself, up and down are the
+     * remote's to move with (the television has its own volume), and OK on
+     * the picture plays and pauses. */
+    var tv = document.documentElement.classList.contains('tv');
     document.addEventListener('keydown', function (e) {
       if (document.querySelector('[data-view="watch"]').hidden) { return; }
       if (e.ctrlKey || e.metaKey || e.altKey) { return; }
@@ -4947,9 +4957,11 @@
          * open menu does it choose. */
         if (k === ' ' && $('pl-menu').contains(t)) { return; }
         togglePlay();
-      } else if ((k === 'ArrowLeft' || k === 'ArrowRight') && !slider) {
+      } else if (tv && k === 'Enter' && t === player) {
+        togglePlay();
+      } else if ((k === 'ArrowLeft' || k === 'ArrowRight') && !slider && (!tv || t === player)) {
         seekTo(filmTime(video) + (k === 'ArrowLeft' ? -10 : 10));
-      } else if ((k === 'ArrowUp' || k === 'ArrowDown') && !slider && $('pl-menu').hidden) {
+      } else if ((k === 'ArrowUp' || k === 'ArrowDown') && !slider && $('pl-menu').hidden && !tv) {
         setVolume((video.muted ? 0 : video.volume) + (k === 'ArrowUp' ? 0.05 : -0.05));
       } else if (k === 'm') {
         $('pl-mute').click();

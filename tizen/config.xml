@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- CMediaStack for Samsung televisions (ADR-0079). The package is a launcher:
+     it asks once for the server's address and then opens that server in its
+     own window, so the television runs whatever version the server runs. -->
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets"
+        id="https://github.com/Jakethecake75/cmediastack" version="1.0.0" viewmodes="maximized">
+    <tizen:application id="CMediaStck.CMediaStack" package="CMediaStck" required_version="6.0"/>
+    <tizen:profile name="tv-samsung"/>
+    <name>CMediaStack</name>
+    <icon src="icon.png"/>
+    <content src="index.html"/>
+    <feature name="http://tizen.org/feature/screen.size.all"/>
+    <!-- The server's address is the person's to choose, so it cannot be
+         named here. -->
+    <access origin="*" subdomains="true"/>
+    <tizen:allow-navigation>*</tizen:allow-navigation>
+    <tizen:privilege name="http://tizen.org/privilege/internet"/>
+    <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+    <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="disable"
+                   encryption="disable" install-location="auto" hwkey-event="enable"/>
+</widget>

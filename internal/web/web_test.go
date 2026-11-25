@@ -46,10 +46,18 @@ func TestEveryPageRenders(t *testing.T) {
 			if want == BundleApp {
 				other = BundleAuth
 			}
-			if !strings.Contains(body, "/assets/"+want+"/"+want+".js") {
+			own := strings.Index(body, "/assets/"+want+"/"+want+".js")
+			if own < 0 {
 				t.Errorf("page does not load the %s bundle", want)
 			}
-			if strings.Contains(body, "/assets/"+other+"/") {
+			// Every page loads the remote's keys first, so the app's player
+			// can know it is on a television (ADR-0079). It is the one file
+			// that crosses, and TestTheRemoteCallsNoAPI keeps it harmless.
+			remote := strings.Index(body, remoteScript)
+			if remote < 0 || remote > own {
+				t.Errorf("page does not load %s before its bundle", remoteScript)
+			}
+			if strings.Contains(strings.Replace(body, remoteScript, "", 1), "/assets/"+other+"/") {
 				t.Errorf("page loads the %s bundle as well as %s", other, want)
 			}
 		})
@@ -234,6 +242,24 @@ func TestAnonymousBundleNamesNoAuthenticatedEndpoint(t *testing.T) {
 	sort.Strings(offenders)
 	for _, o := range offenders {
 		t.Errorf("the anonymous bundle names an authenticated endpoint: %s", o)
+	}
+}
+
+const remoteScript = "/assets/auth/remote.js"
+
+// remote.js is loaded by the authenticated app as well as by the anonymous
+// pages (ADR-0079), so it must stay what it is: keys and focus. A request of
+// any kind from it would be anonymous code acting inside the app.
+func TestTheRemoteCallsNoAPI(t *testing.T) {
+	a, ok := assetIndex["assets/auth/remote.js"]
+	if !ok {
+		t.Fatal("assets/auth/remote.js is not embedded")
+	}
+	src := stripComments(string(a.body))
+	for _, needle := range []string{"/api/", "fetch(", "XMLHttpRequest", "sendBeacon", "WebSocket", "document.cookie", "localStorage", ".src =", ".href ="} {
+		if strings.Contains(src, needle) {
+			t.Errorf("remote.js uses %s", needle)
+		}
 	}
 }
 

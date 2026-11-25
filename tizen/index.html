@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920">
+<title>CMediaStack</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #101010; color: #f0f0f0; font: 32px sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; }
+  form { width: 1100px; }
+  h1 { font-size: 56px; margin: 0 0 24px; }
+  p { color: #b0b0b0; margin: 0 0 32px; }
+  input, button { font: inherit; padding: 18px 24px; border-radius: 10px; border: 2px solid #444; }
+  input { width: 100%; box-sizing: border-box; background: #1a1a1a; color: inherit; }
+  button { margin-top: 24px; background: #4c8dff; color: #fff; border-color: #4c8dff; }
+  input:focus, button:focus { outline: 4px solid #fff; outline-offset: 4px; }
+  #err { color: #ff8080; min-height: 40px; margin-top: 16px; }
+</style>
+</head>
+<body>
+<form id="f" hidden>
+  <h1>CMediaStack</h1>
+  <p>The address of your CMediaStack server. It is asked for once; reinstall the app to change it.</p>
+  <input id="url" type="url" placeholder="https://media.example.com" autocomplete="off" spellcheck="false">
+  <div id="err"></div>
+  <button type="submit">Connect</button>
+</form>
+<script src="main.js"></script>
+</body>
+</html>

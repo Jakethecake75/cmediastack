@@ -20,6 +20,12 @@ libraries, an indexer and Discord. Run the same line inside the container to
 update it. [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §0 has the details; the Docker
 deployment is §1 onwards.
 
+## On a Samsung television
+
+[`tizen/`](tizen/README.md) is an app that opens your server on a Samsung
+(Tizen) television, where the remote works the whole interface. It is
+installed from a computer with the television in developer mode.
+
 ## Status
 
 **Phases 1–6 complete; Phase 7 (the Proxmox deployment) under way** — the counts, and

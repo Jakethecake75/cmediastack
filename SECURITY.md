@@ -73,6 +73,7 @@ plan, not a control, and it is listed under "Not yet enforced" instead.
 | A forwarded header is ignored unless a trusted proxy is configured | `api.TestForwardedHeaderIsIgnoredWithoutTrustedProxies` |
 | A suspended account is byte-identical to an unknown one at the root, so the redirect is not an oracle | `api.TestSuspendedAccountIsIndistinguishableFromAnonymousAtTheRoot` — status, `Location` and body |
 | The anonymous JavaScript bundle names no authenticated endpoint | `web.TestAnonymousBundleNamesNoAuthenticatedEndpoint` — scans it for any `/api/` path outside a nine-entry allowlist |
+| The one anonymous file the app loads, the remote's keys, makes no request and touches no storage | `web.TestTheRemoteCallsNoAPI`, `web.TestEveryPageRenders` (ADR-0079) — mutation-verified |
 | No page emits inline script, inline style or an `on*` handler, so the CSP needs no `unsafe-inline` | `web.TestTemplatesContainNothingInline` |
 | No shipped JavaScript uses `innerHTML`, `eval` or `document.write` | `web.TestScriptsAvoidBlockedAndUnsafeAPIs` |
 | The asset handler serves only flat, known names from its own bundle | `web.TestAssetsRefuseAnythingButAFlatKnownName`, `TestAssetHandlerIsConfinedToItsBundle`, `TestTemplatesAreNotServable` |
@@ -404,6 +405,14 @@ reason, and the separation is asserted rather than assumed:
 `assets/auth/` for any `/api/` path and fails on anything outside the nine
 endpoints reachable before a principal can act. Splitting the bundles achieves
 nothing on its own; that test is the enforcement.
+
+One file crosses, in the safe direction: every page, the app's included,
+loads `assets/auth/remote.js`, a television remote's keys (ADR-0079). It is
+anonymous code running inside the authenticated page, so
+`web.TestTheRemoteCallsNoAPI` fails on any API path, request, cookie, storage
+or navigation in it. The Samsung app in `tizen/` holds two privileges, the
+network and the remote's keys, and lets its window go to any origin because
+the server's address is the person's to choose.
 
 **One route answers a denial with a redirect rather than a 404:** `GET /{$}`,
 the root, sends a caller with no usable session to `/login` and an un-enrolled
