@@ -71,6 +71,14 @@ has its own volume), OK on the picture plays and pauses, and opening the
 player puts the focus on the picture. A control reached by keys brings the
 controls into view, on any device.
 
+*Amended in v0.6.1:* on the television itself, Down from the picture reached
+the seek bar or the volume slider, which kept left and right, and an arrow
+with nowhere further to go was left to the slider: the arrows changed the
+volume and the position. On a television the volume slider and mute are now
+hidden and the film plays at full volume (the television has its own); the
+seek bar has `tabindex="-1"`, which `remote.js` reads as "not by keys"; and
+an arrow `remote.js` handles is always consumed.
+
 ### 4. One file crosses the bundle boundary, in the safe direction
 
 The two bundles share no file (ADR-0011), so that the anonymous one cannot

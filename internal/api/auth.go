@@ -369,7 +369,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.auth.SetSessionCookie(w, res.Cookie)
+	h.auth.SetSessionCookie(w, res.Cookie, res.Lifetime)
 	issueCSRFCookie(w, h.auth.secure)
 
 	next := "mfa"
@@ -401,7 +401,10 @@ func (h *Handlers) LoginMFA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	store := h.svc.Store()
-	sess, user, _, err := store.ResolveSession(r.Context(), cookie.Value, h.svc.Policy().Session)
+	// The Authenticate middleware has already resolved this cookie and sent
+	// any rotation back, so the secret here is at most a moment old and
+	// never rotates again.
+	sess, user, _, err := store.ResolveSession(r.Context(), cookie.Value, h.svc.Policy().Session, true)
 	if err != nil {
 		writeProblem(w, http.StatusUnauthorized, "invalid credentials")
 		return

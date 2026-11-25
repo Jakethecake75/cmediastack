@@ -76,6 +76,12 @@ type SessionConfig struct {
 	AbsoluteTimeout time.Duration
 }
 
+// CookieLifetime is how long the browser should keep this session's cookie:
+// until its absolute end, counted from when it was last seen (ADR-0080).
+func (s Session) CookieLifetime() time.Duration {
+	return s.AbsExpires.Sub(s.LastSeenAt)
+}
+
 func hashSecret(secret string) string {
 	sum := sha256.Sum256([]byte(secret))
 	return hex.EncodeToString(sum[:])
@@ -138,7 +144,12 @@ func (s *Store) CreateSession(ctx context.Context, userID int64, mfaSatisfied bo
 //
 // It also performs rotation and reuse detection, so it is the single place a
 // session's validity is decided.
-func (s *Store) ResolveSession(ctx context.Context, cookie string, cfg SessionConfig) (*Session, *User, string, error) {
+//
+// mayRotate is false for a request whose answer may never reach the browser's
+// cookie jar: a video, sound, subtitle or picture request, which a browser
+// cancels whenever it seeks or scrolls past. A secret rotated there and lost
+// would be presented again after the grace and read as theft (ADR-0080).
+func (s *Store) ResolveSession(ctx context.Context, cookie string, cfg SessionConfig, mayRotate bool) (*Session, *User, string, error) {
 	id, secret, ok := strings.Cut(cookie, ".")
 	if !ok || id == "" || secret == "" {
 		return nil, nil, "", ErrSessionInvalid
@@ -221,7 +232,7 @@ func (s *Store) ResolveSession(ctx context.Context, cookie string, cfg SessionCo
 
 	// Slide the idle window and rotate if due.
 	newCookie := ""
-	if matchesCurrent && now.Sub(parseTS(rotated)) >= rotateEvery {
+	if mayRotate && matchesCurrent && now.Sub(parseTS(rotated)) >= rotateEvery {
 		nextSecret, err := randomToken(32)
 		if err != nil {
 			return nil, nil, "", err
@@ -243,7 +254,7 @@ func (s *Store) ResolveSession(ctx context.Context, cookie string, cfg SessionCo
 			return nil, nil, "", err
 		}
 	}
-	sess.IdleExpires = now.Add(cfg.IdleTimeout)
+	sess.LastSeenAt, sess.IdleExpires = now, now.Add(cfg.IdleTimeout)
 
 	return sess, user, newCookie, nil
 }

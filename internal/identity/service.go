@@ -461,8 +461,10 @@ func (svc *Service) DenyRequest(ctx context.Context, requestID int64, reason, so
 
 // LoginResult tells the caller what the client must do next.
 type LoginResult struct {
-	// Cookie is the session cookie value to set.
-	Cookie string
+	// Cookie is the session cookie value to set, and Lifetime how long the
+	// browser should keep it: the session's whole life (ADR-0080).
+	Cookie   string
+	Lifetime time.Duration
 	// NeedsEnrollment means the account has no authenticator yet. The session
 	// can reach only the enrollment endpoints.
 	NeedsEnrollment bool
@@ -516,7 +518,7 @@ func (svc *Service) Login(ctx context.Context, username, password, sourceIP, use
 		return LoginResult{}, ErrLoginFailed
 	}
 
-	cookie, _, err := svc.store.CreateSession(ctx, user.ID, false, svc.policy.Session, sourceIP, userAgent)
+	cookie, sess, err := svc.store.CreateSession(ctx, user.ID, false, svc.policy.Session, sourceIP, userAgent)
 	if err != nil {
 		return LoginResult{}, err
 	}
@@ -531,6 +533,7 @@ func (svc *Service) Login(ctx context.Context, username, password, sourceIP, use
 
 	return LoginResult{
 		Cookie:          cookie,
+		Lifetime:        sess.CookieLifetime(),
 		NeedsEnrollment: !user.Enrolled(),
 		NeedsMFA:        user.Enrolled(),
 	}, nil

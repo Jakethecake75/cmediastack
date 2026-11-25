@@ -239,7 +239,7 @@ func TestRecoveryRevokesEverythingTheAccountHeld(t *testing.T) {
 	}
 	// The session really does resolve before the recovery, or the assertion
 	// below would pass whether or not anything was revoked.
-	if _, _, _, err := f.store.ResolveSession(t.Context(), cookie, cfg); err != nil {
+	if _, _, _, err := f.store.ResolveSession(t.Context(), cookie, cfg, true); err != nil {
 		t.Fatalf("precondition: the session does not resolve: %v", err)
 	}
 
@@ -250,7 +250,7 @@ func TestRecoveryRevokesEverythingTheAccountHeld(t *testing.T) {
 	if res.SessionsRevoked < 1 {
 		t.Errorf("sessions revoked = %d, want at least 1", res.SessionsRevoked)
 	}
-	if _, _, _, err := f.store.ResolveSession(t.Context(), cookie, cfg); err == nil {
+	if _, _, _, err := f.store.ResolveSession(t.Context(), cookie, cfg, true); err == nil {
 		t.Error("a session survived the recovery of its account — if this was " +
 			"run because the account was compromised, the attacker is still in")
 	}

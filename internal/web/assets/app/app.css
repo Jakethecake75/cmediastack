@@ -644,6 +644,8 @@ progress {
 .pl-btn svg { width: 28px; height: 28px; fill: currentColor; }
 #pl-play svg { width: 36px; height: 36px; }
 .pl-volume { width: 160px; accent-color: #fff; }
+/* A television has its own volume and mute (ADR-0079). */
+.tv .pl-volume, .tv #pl-mute { display: none; }
 .pl-head { display: flex; align-items: flex-end; gap: 12px; }
 .pl-name { flex: 1; min-width: 0; }
 .pl-year { color: rgba(255, 255, 255, 0.7); font-size: 15px; }

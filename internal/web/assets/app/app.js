@@ -4943,6 +4943,11 @@
      * remote's to move with (the television has its own volume), and OK on
      * the picture plays and pauses. */
     var tv = document.documentElement.classList.contains('tv');
+    /* On a television the seek bar is left out of the remote's moves, or it
+     * would take left and right as soon as focus reached it; the picture
+     * seeks instead. The volume is the television's: its slider is hidden
+     * (app.css) and the film plays at full volume. */
+    if (tv) { range.tabIndex = -1; }
     document.addEventListener('keydown', function (e) {
       if (document.querySelector('[data-view="watch"]').hidden) { return; }
       if (e.ctrlKey || e.metaKey || e.altKey) { return; }

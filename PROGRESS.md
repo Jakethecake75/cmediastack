@@ -3,7 +3,7 @@
 Hand this file to a new session to resume. It is the authoritative statement of
 what exists.
 
-**Last updated:** 2026-11-24
+**Last updated:** 2026-11-25
 **Current phase:** 5 (Music and books) — Phase 4's increments 4a–4z and 4aa–4ai complete, and 5a–5g: Phase 5 is complete. Phase 6 works through the known gaps: 6a–6n. Eight of them are
 library and acquisition work done while Phase 4 was open: 4g (migrating from
 Radarr), 4k (episode tracking), 4l (searching for a wanted episode), 4m
@@ -53,7 +53,7 @@ Phase 6 stops at 6n (2026-10-03): the owner deferred audiobooks and anime's
 absolute numbering, to be added if they are needed.
 Phase 7 is the Proxmox deployment: 7a sets a SOCKS5 proxy from the web and adds
 Getting started, with the install scripts and v0.1.0; 7b (v0.1.1) fixes what the
-first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added, 7i (v0.4.1, v0.4.2) plays in a full-window player that keeps up, 7j (v0.4.3) lets the player load its own stream, keeps downloads across a restart and casts, 7k (v0.4.4) keeps the sound in step, reads subtitles out of a film once, and always shows the cast button, and 7l (v0.5.0) adds an approved request to the library by itself, lets a request name seasons or episodes, lets a User ask for a removal, keeps one copy of a file imported across filesystems, and casts from the player to a Chromecast, 7m (v0.5.1) gives a title its own page, makes Home and the library pictures, calls a season a Season, and adds the requests approved before v0.5.0, and 7n (v0.6.0) adds a Samsung television app and lets a remote work the web interface.
+first real instance showed, 7c (v0.1.2) sends UDP trackers through a proxy that relays UDP, 7d (v0.1.3) asks them over HTTP behind one that does not, 7e (v0.2.0) gathers the app into Home, Request and Settings, 7f (v0.2.1) starts a magnet download once its metadata arrives, 7g (v0.3.0) makes Search one tab with posters, Downloads live, and Remove delete, 7h (v0.4.0) transcodes what a browser cannot decode and grabs what is added, 7i (v0.4.1, v0.4.2) plays in a full-window player that keeps up, 7j (v0.4.3) lets the player load its own stream, keeps downloads across a restart and casts, 7k (v0.4.4) keeps the sound in step, reads subtitles out of a film once, and always shows the cast button, and 7l (v0.5.0) adds an approved request to the library by itself, lets a request name seasons or episodes, lets a User ask for a removal, keeps one copy of a file imported across filesystems, and casts from the player to a Chromecast, 7m (v0.5.1) gives a title its own page, makes Home and the library pictures, calls a season a Season, and adds the requests approved before v0.5.0, 7n (v0.6.0) adds a Samsung television app and lets a remote work the web interface, and 7o (v0.6.1) keeps people signed in for up to a year and lets the remote reach the player's controls.
 **Scope change, 2026-09-26:** the operator is starting a new library rather than
 migrating one. Migrating from Sonarr is dropped; the Radarr importer (4g) stays,
 and does nothing unless a Radarr database is placed in its directory
@@ -66,7 +66,7 @@ and does nothing unless a Radarr database is placed in its directory
 | | |
 |---|---|
 | Go packages | 38 |
-| Tests | 1516, all passing, `go vet` and `-race` clean. Five fuzz targets |
+| Tests | 1520, all passing, `go vet` and `-race` clean. Five fuzz targets |
 | Static analysis | **0 findings** from golangci-lint v2.14.0 and from gosec v2.29.0 run as the SAST job runs it, both pinned in CI (twenty-seven `#nosec`, each with its reason on the line — SECURITY.md). `govulncheck`: nothing reached in a module (run again at 7n, after five advisories published since v0.5.1 were cleared by moving to `anacrolix/torrent` v1.63.0, `golang.org/x/net` v0.63.0, OpenTelemetry v1.47.0 and `gorilla/websocket`'s untagged fix; the standard library's are fixed by the Go patch release CI installs). One advisory against a required module, GO-2026-5932 for `golang.org/x/crypto/openpgp`, is in a package nothing here imports; there is no fixed version. gitleaks: nothing, with seven fake test credentials allowlisted by value |
 | Routes registered | 159 (17 anonymous, 51 admin-hidden, 19 session-only). **0 of 159 routes still return 501**: every route Phase 1 registered is built or was removed by a record, and `api.TestNoRouteIsLeftUnbuiltWithoutARecord` keeps it so |
 | **Can the downloader leak?** | **It refuses to start unless it can prove it cannot.** Verified against the binary: exits non-zero on the wrong interface |
@@ -5732,6 +5732,39 @@ Not yet seen on the television itself: the remote against a server running
 v0.6.0, and whether a page opened by the app is given the television's API
 for the play and pause keys.
 
+### Increment 7o (v0.6.1) — staying signed in, and the player's controls by remote ✅
+
+Reported on v0.6.0: signing in again "almost every time", twice in an
+afternoon on the television; and in the player the remote's arrows changed
+the volume and the position and never reached the controls.
+[ADR-0080](docs/adr/0080-staying-signed-in.md) was written first.
+
+**What was found.** The session cookie had no expiry, so closing the browser
+or the television's app dropped it; twelve hours unused ended a session; and
+a secret rotated into the answer to a film or picture request the browser
+then cancelled was lost, and the old one read as theft. In the player, Down
+from the picture reached the seek bar or the volume slider, which kept left
+and right for themselves, and an arrow with nowhere to go was left to the
+slider. The television refuses a debugger (`sdb … debug` answers *closed*),
+so this was read from the code.
+
+| What | How |
+|---|---|
+| **The cookie** | `Max-Age` to the session's absolute end, at sign-in and at each rotation |
+| **The lifetime** | 90 days unused or a year from signing in, by default (`session_idle_timeout`, `session_absolute_timeout`) |
+| **Rotation** | Never on a `video`, `audio`, `track` or `image` request; page loads and the app's requests rotate as before |
+| **The player by remote** | On a television the volume slider and mute are hidden (the television has its own), the seek bar is left out of the remote's moves, and an arrow the remote handles is always consumed |
+
+#### Verified
+
+| Claim | How it is established |
+|---|---|
+| The cookie lasts to the session's absolute end, and a rotated one to what is left | `api.TestTheSessionCookieLastsAsLongAsTheSession` — mutation-verified |
+| A lost answer to a film, sound, subtitle or picture request does not sign anyone out | `api.TestAFilmOrPictureRequestNeverRotatesTheSession` — mutation-verified |
+| The app's own requests still rotate | `api.TestTheAppsOwnRequestsStillRotate` — mutation-verified |
+| A code entered after a rotation was due keeps the session | `api.TestACodeEnteredLateKeepsTheSession` — mutation-verified |
+| On a Tizen user agent, Down from the picture skips the seek bar to the controls, and a slider at the edge keeps its value | The headless-Chromium check of 7n, now twelve cases; three more mutations of `remote.js` each fail one |
+
 ---
 
 ## Decisions locked
@@ -5815,6 +5848,7 @@ for the play and pause keys.
 | 75 | An approved request adds its title and starts the search; a request may name seasons or episodes; a User may ask for a removal, approved only by somebody who may delete; Downloads stable; Clear; a theme switch | [0075](docs/adr/0075-requests-add-themselves-seasons-removals.md) |
 | 76 | Across filesystems an imported file is copied and the download's file becomes a link to it; a finished download never fetches again | [0076](docs/adr/0076-one-copy-seeded-from-the-library.md) |
 | 77 | Casting with Google's Cast sender: the Chromecast fetches the film by a link signed for one file and account | [0077](docs/adr/0077-casting-to-a-chromecast.md) |
+| 80 | The session cookie lasts to the session's end; 90 days unused or a year by default; film and picture requests never rotate the secret | [0080](docs/adr/0080-staying-signed-in.md) |
 | 79 | A Samsung television app that opens the server; the remote's keys in the web interface for every page, doing nothing off a television; one anonymous file the app loads, held to keys and focus | [0079](docs/adr/0079-a-samsung-television-app.md) |
 | 78 | A title has its own page, with the provider's details kept for a day and its backdrop and stills through the artwork cache; Home and the library are pictures; a season is a Season; requests approved before v0.5.0 are added by the approver's page | [0078](docs/adr/0078-a-title-has-a-page-and-home-shows-pictures.md) |
 | 9 | Opaque server-side sessions, not JWTs | See the header comment in `internal/identity/session.go` — immediate revocation is a hard requirement, and a self-contained token cannot do it without the database lookup a JWT exists to avoid |
@@ -5825,7 +5859,7 @@ for the play and pause keys.
 - ≤25 users, ≤100k library items.
 - **No custom post-processing scripts, ever.**
 - Trash window 7 days; playback history retention 180 days.
-- Session rotation every 15 minutes, 30-second grace.
+- Session rotation every 15 minutes, 30-second grace; a session lasts 90 days unused or a year (ADR-0080).
 - Module path `github.com/jakethecake75/cmediastack` — one `sed` to change.
 
 ---

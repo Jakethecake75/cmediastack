@@ -25,6 +25,13 @@
     return !el.disabled && el.getClientRects().length > 0;
   }
 
+  /* tabindex="-1" is a page saying "not by keys": the player's seek bar on a
+   * television, which would otherwise take left and right for itself. Such
+   * an element can still be where a move starts (the player's picture is). */
+  function target(el) {
+    return shown(el) && el.getAttribute('tabindex') !== '-1';
+  }
+
   /* Distance between two spans on one axis: 0 when they overlap. */
   function gap(a1, a2, b1, b2) {
     return Math.max(0, b1 - a2, a1 - b2);
@@ -65,7 +72,7 @@
 
   function move(dir) {
     var from = document.activeElement;
-    var all = Array.prototype.filter.call(document.querySelectorAll(CHOOSABLE), shown);
+    var all = Array.prototype.filter.call(document.querySelectorAll(CHOOSABLE), target);
     if (!from || from === document.body || !shown(from)) {
       /* Nothing chosen yet: start in the open view, else at the top. */
       var view = document.querySelector('.view:not([hidden])');
@@ -117,11 +124,11 @@
     if (!dir) { return; }
     var from = document.activeElement;
     if (from && from !== document.body && keepsArrow(from, dir)) { return; }
+    /* The arrow is the remote's now, whether or not anything is that way:
+     * left to the browser it would scroll, or work a slider it is leaving. */
+    e.preventDefault();
     var next = move(dir);
-    if (next) {
-      e.preventDefault();
-      next.focus();
-    }
+    if (next) { next.focus(); }
   });
 
   /* The remote's play, pause, fast-forward and rewind keys reach a page only

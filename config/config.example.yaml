@@ -52,8 +52,11 @@ auth:
   totp_issuer: "CMediaStack"
   recovery_code_count: 10
 
-  session_idle_timeout: 12h
-  session_absolute_timeout: 720h
+  # A session ends after this long unused, or this long after signing in,
+  # whichever is first; the browser keeps its cookie until the second
+  # (ADR-0080). Shorter is safer on a shared computer.
+  session_idle_timeout: 2160h     # 90 days
+  session_absolute_timeout: 8760h # a year
 
   min_password_length: 12
   # HIBP k-anonymity range check, performed through the metadata egress profile.

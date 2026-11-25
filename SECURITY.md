@@ -222,6 +222,8 @@ plan, not a control, and it is listed under "Not yet enforced" instead.
 | A TOTP code cannot be replayed inside its 30-second step | `api.TestTOTPCodeCannotBeReplayed` |
 | Suspension kills live sessions immediately, with no clock advance | `api.TestSuspensionKillsLiveSessionsImmediately` |
 | A superseded session secret is treated as theft and revokes the session | `api.TestSupersededSessionSecretIsTreatedAsReuse` |
+| The app's own requests rotate the secret; a film or picture request, which a browser cancels, never does | `api.TestTheAppsOwnRequestsStillRotate`, `api.TestAFilmOrPictureRequestNeverRotatesTheSession` (ADR-0080) — mutation-verified |
+| The session cookie lasts to the session's absolute end and no longer | `api.TestTheSessionCookieLastsAsLongAsTheSession` — mutation-verified |
 | A Manager cannot approve into Admin **through the HTTP stack**, not merely in the engine | `api.TestManagerCannotApproveIntoAdminOverHTTP` |
 | A privileged field smuggled into a signup body is rejected, not ignored | `api.TestSmuggledPrivilegedFieldsAreRejected` |
 | Logout revokes the session; an idle session expires | `api.TestLogoutRevokesTheSession`, `api.TestSessionExpiresOnIdleTimeout` |
@@ -965,10 +967,18 @@ management does not.
   is a replay of a superseded token. The whole session is revoked and the event
   is logged at WARN. This cuts off the legitimate holder too; that is the
   intended trade.
+- Film, sound, subtitle and picture requests (`Sec-Fetch-Dest` `video`,
+  `audio`, `track`, `image`) never rotate: a browser cancels them whenever it
+  seeks or scrolls, and a secret rotated into a lost answer would revoke the
+  session at the next request (ADR-0080). Page loads and the app's own
+  requests rotate.
 - Idle and absolute timeouts are both enforced, and a suspended or disabled
-  account's sessions stop working on the very next request.
+  account's sessions stop working on the very next request. By default 90
+  days unused or a year from signing in (ADR-0080).
 - The cookie is HttpOnly (so an XSS past the CSP still cannot read it), Secure
-  unless serving plain HTTP to localhost, and SameSite=Lax.
+  unless serving plain HTTP to localhost, and SameSite=Lax. It carries
+  `Max-Age` up to the session's absolute end, so closing the browser does not
+  sign anyone out; the server's timeouts still decide.
 
 ---
 

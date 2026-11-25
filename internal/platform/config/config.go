@@ -338,6 +338,8 @@ func Default() Config {
 			Path:        "/config/cmediastack.db",
 			BusyTimeout: 5 * time.Second,
 		},
+		// Sessions last a year, or three months unused (ADR-0080): signing in
+		// again with a code every day or two was the most common complaint.
 		Auth: AuthConfig{
 			Argon2Memory:           19456, // 19 MiB
 			Argon2Iterations:       2,
@@ -347,8 +349,8 @@ func Default() Config {
 			MFARequired:            true,
 			TOTPIssuer:             "CMediaStack",
 			RecoveryCodeCount:      10,
-			SessionIdleTimeout:     12 * time.Hour,
-			SessionAbsoluteTimeout: 30 * 24 * time.Hour,
+			SessionIdleTimeout:     90 * 24 * time.Hour,
+			SessionAbsoluteTimeout: 365 * 24 * time.Hour,
 			MinPasswordLength:      12,
 			BreachCheckEnabled:     true,
 			LoginMaxAttempts:       5,
