@@ -1,0 +1,27 @@
+{
+  "name": "claude-cake-media-stack",
+  "version": "1.0.0",
+  "description": "One self-hosted service that replaces Radarr, Sonarr, Lidarr, Readarr, Bazarr, Prowlarr, qBittorrent, Jellyseerr and Jellyfin.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jakethecake75/cmediastack.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Jakethecake75/cmediastack/issues"
+  },
+  "homepage": "https://github.com/Jakethecake75/cmediastack#readme",
+  "devDependencies": {
+    "playwright": "^1.65.1"
+  }
+}

@@ -33,3 +33,7 @@ coverage.out
 
 # Plan-execution scratch (superpowers skills)
 .superpowers/
+
+# Design loop (DESIGN_LOOP.md)
+/node_modules/
+/screenshots/
