@@ -93,13 +93,15 @@ Components
 Priority order. (H) high, (M) medium, (L) low.
 
 1. (M) Title page: neither Home nor Library tab is marked while a title is open, so the person loses their place. Needs a script change (keep the tab they came from); weigh against rule #1.
-2. (M) The player (watch view) and a title page with artwork, overview and seasons are still unseen: the seed has no provider data. Seed artwork/overview the way increment 7m did (sqlite + PNGs under `<db dir>/artwork/`) to audit them.
+2. (M) A series' seasons and episode cards (`.tp-seasons`, wide tiles) and the player's time readout are still unseen: the seed has no episode data from a provider. Mock `/api/v1/media/{id}/children` in `mockArtwork` to audit them.
 3. (L) Health: "Overall: warn" is plain text and log records of level warn/error look like info ones; both need a class from JS.
 4. (L) Theme button says "Light mode" with `aria-pressed="true"` while dark is on; screen readers announce it inverted. Script/markup change.
 5. (L) Search has no page h2, unlike Library/Downloads/Wanted (adding one adds content).
-6. (L) Audit filters `#audit-actor`/`#audit-text` have only placeholders as labels; an `aria-label` attribute would fix it (markup).
-7. (L) Accounts on phones: each role's permission list is ~1000px tall.
-8. (L) app.css mixes px and rem and several radii; fold remaining literals into the scale.
+6. (L) Audit filters `#audit-actor`/`#audit-text` have only placeholders as labels; `#pl-message` has no `role="alert"`. Both are attribute additions (markup).
+7. (L) Player: "Info" takes a row of its own under the transport buttons (four rows of controls); a grid would put it on the transport row, but the subtitle offset (190px) must be rechecked with it.
+8. (L) A badge that wraps to its own line keeps its 8px left margin (Backups "NEWEST").
+9. (L) Accounts on phones: each role's permission list is ~1000px tall.
+10. (L) app.css mixes px and rem and several radii, and has dead `var(--x, #fallback)` colours; fold into the scale.
 
 Not design (found while verifying, pre-existing, left alone): creating an API token
 with the form's default scopes as a fresh admin is refused with "requested scope
@@ -147,3 +149,16 @@ Pass 2 (2026-11-25)
 - [x] Sign-in pages: hints 14px, code fields in mono, recovery codes 5 across on desktop, QR centred on the card, manual-entry hover
 - [x] Backlog done: Getting started (#2), Accounts notes (#3), Health/Tasks edge (#4), Network warning (#5), Downloads heading (#6), Enroll QR (#9), compact lists (#10)
 - [x] Won't do: Identify's "Run a pass now" on the right is a normal count-left/action-right toolbar
+
+Pass 3 (2026-11-25)
+- [x] Screenshot browser serves generated artwork + descriptions (`mockArtwork` in screenshot.js; server untouched); one film left bare; title pages and the player now shot
+- [x] Fixed what earlier passes worsened: player volume back to white, player text buttons lost the secondary frame; no-artwork title page no longer squashed on phones
+- [x] Player: white 3px focus ring on controls and menus (TV remote), message reads as the message (17/600, capitalised)
+- [x] Missing-picture titles hyphenate instead of clipping; shelves run to the window edge with room for the focus ring
+- [x] Series page: "Nothing on disk yet" sits by the facts, not floating
+- [x] Phones: every view shares the bars' 16px gutter; banners keep page margins; library captions two lines
+- [x] Light theme: cards lift (soft shadow), fields white not grey, field edge #7d8796 (≥3:1 on page), empty-state edges visible, missing-poster card darker than the page, lighter poster shadow, disabled boxes visible
+- [x] Sign-in pages: error/ok/warn tinted like the app's; ghost buttons use the field edge
+- [x] Consistency: Notifications "What is sent" Save is primary; Downloads engine-off box matches other warnings; Storage folder warning marked; Audit filter is a card like Health's; view-level buttons 12px below their text; Wanted note muted
+- [x] noscript banner uses fixed amber (readable whatever the theme)
+- [x] Won't do: `.item .title` as flex (would collapse spaces between inline text runs)

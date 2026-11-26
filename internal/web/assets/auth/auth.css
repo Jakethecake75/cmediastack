@@ -17,6 +17,9 @@
   --danger: #ff6b6b;
   --ok: #5bd68a;
   --warn: #ffc857;
+  --ok-bg: rgba(91, 214, 138, 0.12);
+  --err-bg: rgba(255, 107, 107, 0.12);
+  --warn-bg: rgba(255, 200, 87, 0.12);
   --surface-2: #242424;
   /* Filled buttons: white text needs a deeper blue than links do (AA). */
   --accent-strong: #2b6be0;
@@ -41,11 +44,14 @@
   --surface-2: #eef1f5;
   --accent-strong: #1a5fd0;
   --accent-hover: #164fae;
-  --field-line: #8a94a3;
+  --field-line: #7d8796;
   /* Status colours dark enough to read on white. */
   --danger: #c62828;
   --ok: #1e7a44;
   --warn: #8a5d12;
+  --ok-bg: #dff0e4;
+  --err-bg: #f6dede;
+  --warn-bg: #f7ecd6;
 }
 
 * { box-sizing: border-box; }
@@ -154,7 +160,7 @@ button[disabled] { opacity: 0.55; cursor: progress; }
 .ghost {
   background: transparent;
   color: var(--text);
-  border-color: var(--line);
+  border-color: var(--field-line);
   padding: 6px 12px;
 }
 
@@ -189,9 +195,9 @@ button[disabled] { opacity: 0.55; cursor: progress; }
   border: 1px solid;
 }
 
-.error { color: var(--danger); border-color: var(--danger); }
-.ok { color: var(--ok); border-color: var(--ok); }
-.warn { color: var(--warn); border-color: var(--warn); }
+.error { color: var(--danger); border-color: var(--danger); background: var(--err-bg); }
+.ok { color: var(--ok); border-color: var(--ok); background: var(--ok-bg); }
+.warn { color: var(--warn); border-color: var(--warn); background: var(--warn-bg); }
 
 .footer-links {
   display: flex;
@@ -215,7 +221,7 @@ button[disabled] { opacity: 0.55; cursor: progress; }
 
 .noscript {
   padding: 14px 16px;
-  background: var(--warn);
+  background: #ffc857;
   color: #1b2027;
   font-size: 14px;
 }
@@ -335,4 +341,10 @@ footer.source {
 /* Phones zoom into any field under 16px; keep them at 16. */
 @media (max-width: 640px) {
   input[type="text"], input[type="email"], input[type="password"], textarea { font-size: 16px; }
+}
+
+/* Light theme: the card lifts off the page, fields read as fields. */
+:root[data-theme="light"] .card { box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06); }
+:root[data-theme="light"] :is(input[type="text"], input[type="email"], input[type="password"], textarea) {
+  background: var(--surface);
 }

@@ -49,7 +49,7 @@
   --accent: #1a5fd0;
   --accent-strong: #1a5fd0;
   --accent-hover: #164fae;
-  --field-line: #8a94a3;
+  --field-line: #7d8796;
   /* Status colours dark enough to read on white. */
   --danger: #c62828;
   --ok: #1e7a44;
@@ -86,7 +86,7 @@ body {
 
 .noscript {
   padding: 14px 16px;
-  background: var(--warn);
+  background: #ffc857;
   color: #1b2027;
   font-size: 14px;
 }
@@ -306,7 +306,7 @@ select {
   border-radius: 8px;
 }
 
-input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color: var(--accent); }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 
 textarea { max-width: 640px; font-family: var(--mono); font-size: 13px; }
 
@@ -362,6 +362,9 @@ button:where(:not([class]), [class=""]) { background: var(--surface-2); color: v
 .ghost:hover:not([disabled]),
 button:where(:not([class]), [class=""]):hover:not([disabled]) { background: var(--surface-2); border-color: var(--muted); }
 .danger:hover:not([disabled]) { background: var(--err-bg); }
+/* The player draws its own buttons on the picture: no secondary frame there. */
+.pl button:where(:not([class]), [class=""]) { border-color: transparent; }
+.pl button:where(:not([class]), [class=""]):hover:not([disabled]) { border-color: transparent; background: rgba(255, 255, 255, 0.12); }
 
 .item .primary, .item .ghost, .item .danger { margin-top: 0; }
 
@@ -1137,7 +1140,7 @@ p.warn {
 .item.why { border-left: 3px solid var(--warn); background: var(--warn-bg); }
 #backup-policy .why { margin-top: 8px; padding: 8px 12px; border-left: 3px solid var(--warn); background: var(--warn-bg); }
 #wanted-automatic:not(:empty) {
-  max-width: none; padding: 10px 14px; color: var(--text);
+  max-width: none; padding: 10px 14px; color: var(--muted);
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
 }
 /* Downloads with the engine off: say so as a problem, and drop the empty
@@ -1145,6 +1148,7 @@ p.warn {
 #queue-list:has(~ #queue-done:empty) > .empty {
   border: 1px solid var(--warn); border-left-width: 3px; background: var(--warn-bg);
   color: var(--warn-text); text-align: left; text-wrap: pretty;
+  padding: 10px 14px; font-size: 14px;
 }
 [data-view="queue"] h3:has(+ #queue-done:empty) { display: none; }
 .empty::first-letter { text-transform: uppercase; }
@@ -1196,7 +1200,8 @@ label.checkbox + .list { margin-top: 10px; }
   input[type="password"], input[type="url"], textarea, select { font-size: 16px; }
   /* The bars and the wide views share one gutter. */
   .content.wide { --gutter: var(--chrome-pad); }
-  .tp-poster:has(> .poster-none) { width: 30vw; }
+  .tp-poster:has(> .poster-none) { width: 30vw; flex-basis: auto; }
+  .tp-poster .poster-none { font-size: 13px; padding: 8px; }
   /* Tasks: Run now stays on the name's row; the text below gets the width. */
   #tasks-list .item > .meta { grid-column: 1 / -1; }
   #tasks-list .item > .actions { grid-row: 1; align-self: center; }
@@ -1210,4 +1215,73 @@ label.checkbox + .list { margin-top: 10px; }
   .find-bar select { max-width: none; }
   /* Five account cards: the odd one out spans the row. */
   #account-cards > .stat:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+
+/* --------------------------------------------------------------------------
+ * Design pass 3 (DESIGN_LOOP.md).
+ * ----------------------------------------------------------------------- */
+
+/* A long one-word title breaks rather than being clipped. */
+.poster-none { overflow-wrap: break-word; hyphens: auto; }
+
+/* Shelves run to the window's edge, and leave room for a focus ring. */
+.shelf-row { padding: 6px 6px 12px; margin: 0 -6px; scroll-padding-inline: 6px; }
+.content.wide .shelf-row {
+  margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); scroll-padding-inline: var(--gutter);
+}
+
+/* A page that shows a badge in place of Play keeps the badge by the facts. */
+.tp-actions:not(:has(.tp-play)) { min-height: 0; margin: 16px 0 20px; }
+
+/* The player: focus is white and plain on a picture, and on a television. */
+.pl :focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.pl-btn:focus-visible { background: rgba(255, 255, 255, 0.2); }
+.pl-menu button:focus-visible { background: rgba(255, 255, 255, 0.22); box-shadow: inset 0 0 0 2px #fff; }
+.pl-message > p { font-size: 17px; font-weight: 600; line-height: 1.4; }
+.pl-message > p::first-letter { text-transform: uppercase; }
+
+/* Banners keep the page's margins. */
+.error, .ok { width: calc(100% - 2 * var(--chrome-pad)); max-width: 900px; }
+
+/* Buttons under a view sit 12px below what precedes them, not 28. */
+.view > .actions > button { margin-top: 0; }
+
+/* Every form's submit is the primary button. */
+#notifications-categories > button[type="submit"] {
+  background: var(--accent-strong); color: var(--accent-ink); border-color: transparent; font-weight: 600;
+}
+#notifications-categories > button[type="submit"]:hover:not([disabled]) { background: var(--accent-hover); }
+
+/* Storage: a folder with a problem is marked like every other warning. */
+#roots-list .item:has(> .why) { border-left: 3px solid var(--warn); }
+#roots-list .why { margin-top: 8px; padding: 8px 12px; background: var(--warn-bg); }
+#roots-list .muted.small { font-size: 13px; opacity: 1; color: var(--muted); overflow-wrap: anywhere; }
+
+/* The audit filter is a card, like Health's log filter. */
+#audit-filter {
+  padding: 16px; margin-bottom: 20px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+}
+
+/* Light theme: cards lift off the page, fields read as fields. */
+:root[data-theme="light"] :is(.item, .inline-form, .stat, .find-bar, .find-detail, #audit-filter) {
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+}
+:root[data-theme="light"] :is(input[type="text"], input[type="search"], input[type="number"], input[type="email"],
+  input[type="password"], input[type="url"], textarea, select) { background: var(--surface); }
+:root[data-theme="light"] .empty { border-color: #b8c1cc; }
+:root[data-theme="light"] .poster:has(> .poster-none) {
+  background: linear-gradient(160deg, #e6ebf1, #d9e0e8); box-shadow: inset 0 0 0 1px #c3ccd7;
+}
+:root[data-theme="light"] .poster:has(> .poster-none) .tile-progress { background: rgba(16, 24, 40, 0.15); }
+:root[data-theme="light"] .tp-poster { box-shadow: 0 8px 24px rgba(16, 24, 40, 0.18); }
+:root[data-theme="light"] label.checkbox input:disabled { opacity: 1; }
+
+@media (max-width: 640px) {
+  /* Every view shares the bars' gutter. */
+  .content { padding-left: var(--chrome-pad); padding-right: var(--chrome-pad); }
+  .toolbar > .ghost { flex: 0 0 auto; }
+  /* Three posters across: captions get two lines. */
+  .poster-grid .tile-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .pl-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 20px; }
 }

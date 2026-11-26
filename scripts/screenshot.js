@@ -96,6 +96,48 @@ async function api(page, method, url, data) {
   return { status: res.status(), body: await res.json().catch(() => null) };
 }
 
+// Artwork and descriptions as a metadata provider would supply them. This
+// instance has no provider, so the screenshot browser alone is answered with
+// generated pictures; the server is not touched. One film keeps none, so the
+// missing-picture look is still covered.
+const BLURB = 'A quiet story about the people who keep a small harbour town running ' +
+  'through one long winter, told over the course of a single week.';
+function artSVG(kind, id, title) {
+  const hue = (Number(id) * 47) % 360, w = kind === 'poster' ? 400 : 1280, h = kind === 'poster' ? 600 : 720;
+  const esc = String(title).replace(/[<&>"]/g, '');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">` +
+    `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue},45%,38%)"/>` +
+    `<stop offset="1" stop-color="hsl(${(hue + 60) % 360},50%,14%)"/></linearGradient></defs>` +
+    `<rect width="100%" height="100%" fill="url(#g)"/><circle cx="${w * 0.7}" cy="${h * 0.3}" r="${w * 0.22}" fill="hsla(${hue},70%,70%,0.25)"/>` +
+    (kind === 'poster' ? `<text x="28" y="${h - 40}" fill="#fff" font-family="Georgia,serif" font-size="34">${esc}</text>` : '') + '</svg>';
+}
+async function mockArtwork(ctx) {
+  let bare = null;
+  const dress = (it) => {
+    if (!it || typeof it !== 'object' || !it.id) { return it; }
+    if (bare === null && it.kind === 'movie') { bare = it.id; }
+    if (it.id !== bare) { it.poster = `/design-art/poster/${it.id}/${encodeURIComponent(it.title || '')}.svg`; }
+    return it;
+  };
+  await ctx.route(/\/api\/v1\/media(\/\d+)?(\?.*)?$/, async (route) => {
+    if (route.request().method() !== 'GET') { return route.continue(); }
+    const res = await route.fetch(); const body = await res.json().catch(() => null);
+    if (body && Array.isArray(body.items)) { body.items.forEach(dress); } else { dress(body); }
+    return route.fulfill({ response: res, json: body });
+  });
+  await ctx.route(/\/api\/v1\/media\/(\d+)\/details/, (route) => {
+    const id = route.request().url().match(/media\/(\d+)/)[1];
+    if (Number(id) === bare) { return route.continue(); }
+    return route.fulfill({ json: { score: 7.4, genres: ['Drama', 'Mystery'], runtime_minutes: 112,
+      tagline: 'Every light is somebody waiting.', overview: BLURB,
+      backdrop: `/design-art/backdrop/${id}/x.svg` } });
+  });
+  await ctx.route(/\/design-art\//, (route) => {
+    const [, kind, id, t] = route.request().url().match(/design-art\/(\w+)\/(\d+)\/([^?]*)\.svg/);
+    return route.fulfill({ contentType: 'image/svg+xml', body: artSVG(kind, id, decodeURIComponent(t)) });
+  });
+}
+
 async function visit(page, url) {
   await page.goto('about:blank');
   await page.goto(BASE + url, { waitUntil: 'networkidle' });
@@ -158,6 +200,7 @@ async function visit(page, url) {
     } else { console.log('seed root', dir, r.status, JSON.stringify(r.body)); }
   }
 
+  await mockArtwork(ctx);
   for (const v of VIEWS) {
     current = v;
     await visit(page, '/#' + v);
@@ -169,13 +212,24 @@ async function visit(page, url) {
 
   // A film's page and a series' page.
   const media = ((await api(page, 'GET', '/api/v1/media')).body || {}).items || [];
-  for (const kind of ['movie', 'series']) {
-    const m = media.find((x) => x.kind === kind);
+  // The last of each kind: the first film is the one left without artwork.
+  for (const kind of ['movie', 'series', 'bare']) {
+    const m = kind === 'bare' ? media.find((x) => x.kind === 'movie')
+      : media.filter((x) => x.kind === kind).pop();
     if (!m) { console.log('skip title-' + kind + ' (none in the library)'); continue; }
     current = 'title-' + kind;
     await visit(page, '/#title/' + m.id);
     await page.waitForTimeout(600);
     await shoot(page, 'app-title-' + kind);
+    if (kind === 'movie') {
+      // The player: a placeholder file will not decode, so this is the player
+      // with its message up — still the player's own chrome.
+      current = 'watch';
+      await page.click('.tp-play').catch(() => null);
+      await page.waitForTimeout(3000);
+      if ((await page.evaluate(() => location.hash)) === '#watch') { await shoot(page, 'app-watch'); }
+      await page.keyboard.press('Escape');
+    }
   }
 
   // Behaviour checks: the parts of the FUNCTIONALITY CHECKLIST a script can see.
