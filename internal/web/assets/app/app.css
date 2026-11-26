@@ -444,8 +444,8 @@ a:focus-visible {
 /* An item that was refused, and one that was accepted. Colour is never the only
    signal: every rejected item also carries a .why line saying so in words, for
    the sake of anyone who cannot distinguish these two hues. */
-.item.accepted { border-left: 3px solid var(--ok, #2f7d4f); }
-.item.rejected { border-left: 3px solid var(--warn, #9a6a1a); }
+.item.accepted { border-left: 3px solid var(--ok); }
+.item.rejected { border-left: 3px solid var(--warn); }
 
 .facts {
   display: flex;
@@ -461,7 +461,7 @@ a:focus-visible {
 .why {
   margin-top: 0.4rem;
   font-size: 0.85rem;
-  color: var(--warn-text, #8a5d12);
+  color: var(--warn-text);
 }
 
 .note {
@@ -489,7 +489,7 @@ progress {
 .detail {
   margin-top: 1.25rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--line, #ddd);
+  border-top: 1px solid var(--line);
 }
 
 .history { margin-top: 0.6rem; }
@@ -504,15 +504,15 @@ progress {
 
 /* The audit log (ADR-0031): the action reads as the line's title, the
    detail as its body. */
-.audit-action { margin-left: 0.5rem; font-family: var(--mono, monospace); }
+.audit-action { margin-left: 0.5rem; font-family: var(--mono); }
 .audit-detail { margin-top: 0.25rem; overflow-wrap: anywhere; }
 .audit-more { margin-top: 0.3rem; font-size: 0.84rem; }
 .audit-more summary { cursor: pointer; color: var(--muted); }
 .audit-more .fact-value { overflow-wrap: anywhere; }
 
-.badge.imported { background: var(--ok-bg, #dff0e4); }
+.badge.imported { background: var(--ok-bg); }
 .badge.skipped  { background: var(--surface-2); color: var(--muted); }
-.badge.failed   { background: var(--err-bg, #f6dede); }
+.badge.failed   { background: var(--err-bg); }
 
 @media (max-width: 640px) {
   .toolbar { gap: 0.5rem; }
@@ -1285,3 +1285,42 @@ label.checkbox + .list { margin-top: 10px; }
   .poster-grid .tile-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .pl-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 20px; }
 }
+
+/* --------------------------------------------------------------------------
+ * Design pass 4 (DESIGN_LOOP.md).
+ * ----------------------------------------------------------------------- */
+
+/* The player's Info sits on the transport row, at the right: three rows of
+ * controls, not four. */
+.pl-bottom { display: grid; grid-template-columns: 1fr auto; align-items: center; }
+.pl-head, .pl-seek-wrap, .pl-times { grid-column: 1 / -1; }
+
+/* Grid tiles start at the top of their row, whatever their caption's length. */
+.poster-grid { align-items: start; }
+
+/* Episodes not on disk: the picture is dimmed, the caption stays readable;
+ * a wide card's placeholder title would only repeat the caption. */
+.tile.absent[disabled] { opacity: 1; }
+.tile.absent .poster { opacity: 0.55; }
+.tile.absent .tile-title { color: var(--muted); }
+.tile.wide .poster-none { visibility: hidden; }
+.tile.wide .tile-title { font-size: 15px; font-weight: 600; }
+.tile-sub { margin-top: 2px; }
+
+/* What Play will start: a caption for the button, not a second tagline. */
+.tp-next { margin: -4px 0 16px; font-size: 14px; font-weight: 400; color: var(--muted); }
+
+/* Player: the message box fits its message; Info answers a pointer. */
+.pl-message { width: auto; min-width: min(320px, calc(100% - 32px)); max-width: min(560px, calc(100% - 32px)); }
+.pl-tabs button:hover { text-decoration: underline; text-underline-offset: 6px; }
+.pl-year { font-size: 13px; }
+
+/* One look for every warning box. */
+p.warn, .item.why, #backup-policy .why, #roots-list .why {
+  border: 1px solid var(--warn); border-left-width: 3px; border-radius: var(--radius);
+  background: var(--warn-bg); color: var(--warn-text); padding: 10px 14px;
+}
+#backup-policy:has(.why) { max-width: none; }
+
+/* Accounts: "This is you…" informs; it is not a warning. */
+#users-list .why { color: var(--muted); }

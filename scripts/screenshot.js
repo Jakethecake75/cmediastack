@@ -79,9 +79,12 @@ function watch(page, name) {
   page.on('pageerror', (e) => errors.push(`[${name}] pageerror: ${e.message}`));
 }
 
-async function shoot(page, name) {
+// reload: draw the page again at each width, as a phone that opened at that
+// width would (the open settings tab is scrolled into view when drawn).
+async function shoot(page, name, reload) {
   for (const w of WIDTHS) {
     await page.setViewportSize({ width: w, height: 900 });
+    if (reload) { await page.reload({ waitUntil: 'networkidle' }); await page.waitForTimeout(400); }
     await page.waitForTimeout(250);
     await page.screenshot({ path: path.join(OUT, `${name}-${w}.png`), fullPage: true });
   }
@@ -131,6 +134,21 @@ async function mockArtwork(ctx) {
     return route.fulfill({ json: { score: 7.4, genres: ['Drama', 'Mystery'], runtime_minutes: 112,
       tagline: 'Every light is somebody waiting.', overview: BLURB,
       backdrop: `/design-art/backdrop/${id}/x.svg` } });
+  });
+  // A series' seasons, as a provider would describe them: on disk, missing,
+  // announced and still to air, so every episode card state is shown.
+  await ctx.route(/\/api\/v1\/media\/(\d+)\/children/, (route) => {
+    const id = Number(route.request().url().match(/media\/(\d+)/)[1]);
+    const ep = (season, n, state) => ({
+      season, number: n, title: ['Low Tide', 'The Ferry', 'Lamplighters', 'North Wall', 'Fog Bell', 'Spring'][n - 1],
+      have: state === 'have', announced: state === 'announced', file_id: state === 'have' ? id * 100 + n : 0,
+      aired_at: state === 'future' ? '2027-03-0' + n + 'T00:00:00Z' : '2022-0' + n + '-14T00:00:00Z',
+      runtime_minutes: 48, still: state === 'have' ? `/design-art/backdrop/${id * 100 + n}/x.svg` : ''
+    });
+    return route.fulfill({ json: { seasons: [
+      { number: 1, episodes: [ep(1, 1, 'have'), ep(1, 2, 'have'), ep(1, 3, 'have'), ep(1, 4, 'missing'), ep(1, 5, 'missing'), ep(1, 6, 'have')] },
+      { number: 2, episodes: [ep(2, 1, 'have'), ep(2, 2, 'future'), ep(2, 3, 'announced')] }
+    ] } });
   });
   await ctx.route(/\/design-art\//, (route) => {
     const [, kind, id, t] = route.request().url().match(/design-art\/(\w+)\/(\d+)\/([^?]*)\.svg/);
@@ -207,7 +225,7 @@ async function visit(page, url) {
     await page.waitForTimeout(400);
     const shown = await page.getAttribute('section.view:not([hidden])', 'data-view').catch(() => null);
     if (shown !== v) { console.log('skip', v, '(app showed', shown + ')'); continue; }
-    await shoot(page, 'app-' + v);
+    await shoot(page, 'app-' + v, true);
   }
 
   // A film's page and a series' page.

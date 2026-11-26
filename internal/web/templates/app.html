@@ -116,7 +116,7 @@
       <div class="pl" id="watch-player" tabindex="-1">
         <video id="watch-video" preload="auto" playsinline></video>
         <div class="pl-spinner" id="pl-spinner" hidden></div>
-        <div class="pl-message" id="pl-message">
+        <div class="pl-message" id="pl-message" role="status">
           <p id="watch-summary"></p>
           <div id="watch-blockers" class="list compact"></div>
         </div>
@@ -642,9 +642,9 @@
           <option value="denied">Denied</option>
           <option value="failure">Failed</option>
         </select>
-        <input id="audit-actor" type="text" placeholder="Who (jacob, anonymous, system:acquire)"
+        <input id="audit-actor" type="text" aria-label="Who" placeholder="Who (jacob, anonymous, system:acquire)"
                autocomplete="off" maxlength="64">
-        <input id="audit-text" type="search" placeholder="Find in details, addresses, user agents"
+        <input id="audit-text" type="search" aria-label="Find in details" placeholder="Find in details, addresses, user agents"
                autocomplete="off" maxlength="100">
         <button type="submit">Show</button>
       </form>

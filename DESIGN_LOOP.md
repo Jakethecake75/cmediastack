@@ -90,18 +90,18 @@ Components
 
 ## DESIGN BACKLOG
 
-Priority order. (H) high, (M) medium, (L) low.
+(empty — pass 5 is a verification pass: a whole-site review; if it finds nothing material, STATUS: COMPLETE)
 
-1. (M) Title page: neither Home nor Library tab is marked while a title is open, so the person loses their place. Needs a script change (keep the tab they came from); weigh against rule #1.
-2. (M) A series' seasons and episode cards (`.tp-seasons`, wide tiles) and the player's time readout are still unseen: the seed has no episode data from a provider. Mock `/api/v1/media/{id}/children` in `mockArtwork` to audit them.
-3. (L) Health: "Overall: warn" is plain text and log records of level warn/error look like info ones; both need a class from JS.
-4. (L) Theme button says "Light mode" with `aria-pressed="true"` while dark is on; screen readers announce it inverted. Script/markup change.
-5. (L) Search has no page h2, unlike Library/Downloads/Wanted (adding one adds content).
-6. (L) Audit filters `#audit-actor`/`#audit-text` have only placeholders as labels; `#pl-message` has no `role="alert"`. Both are attribute additions (markup).
-7. (L) Player: "Info" takes a row of its own under the transport buttons (four rows of controls); a grid would put it on the transport row, but the subtitle offset (190px) must be rechecked with it.
-8. (L) A badge that wraps to its own line keeps its 8px left margin (Backups "NEWEST").
-9. (L) Accounts on phones: each role's permission list is ~1000px tall.
-10. (L) app.css mixes px and rem and several radii, and has dead `var(--x, #fallback)` colours; fold into the scale.
+## DEFERRED — needs a script or markup behaviour change (outside rule #1)
+
+Each of these would change what a script does or add content, so the design
+loop leaves them for a deliberate change by the owner:
+- Title page: no Home/Library tab is marked while a title is open (keep the tab the person came from).
+- Health: "Overall: warn" and warn/error log records need a level class from JS to stand out.
+- Theme button: "Light mode" with `aria-pressed="true"` while dark is on reads inverted to screen readers.
+- Search has no page h2 (adding one adds content).
+- Episode cards: missing / to air / announced share one look (needs a state class from JS); missing episodes are `disabled`, so a keyboard or TV remote cannot reach them (`aria-disabled` would change behaviour).
+- Won't do: a badge that wraps to its own line keeps its 8px margin (cosmetic, phones only); role permission lists are ~1000px tall on phones (that is the content; columns are too narrow at 375); px/rem unification (no visible effect).
 
 Not design (found while verifying, pre-existing, left alone): creating an API token
 with the form's default scopes as a fresh admin is refused with "requested scope
@@ -162,3 +162,13 @@ Pass 3 (2026-11-25)
 - [x] Consistency: Notifications "What is sent" Save is primary; Downloads engine-off box matches other warnings; Storage folder warning marked; Audit filter is a card like Health's; view-level buttons 12px below their text; Wanted note muted
 - [x] noscript banner uses fixed amber (readable whatever the theme)
 - [x] Won't do: `.item .title` as flex (would collapse spaces between inline text runs)
+
+Pass 4 (2026-11-25)
+- [x] Screenshot browser mocks a series' seasons (on disk, missing, to air, announced); app views reload at each width so phone shots match a phone
+- [x] Episodes not on disk: picture dimmed, caption readable (was ~2.9:1); wide placeholders no longer repeat the caption; episode names 15/600
+- [x] "S1:E1 - Low Tide" is a muted caption for Play, not a second tagline
+- [x] Player: Info on the transport row (three rows of controls), message box fits its text, Info hover, year on the scale; `#pl-message` role="status"
+- [x] One warning look everywhere (Search, Network, Backups, Storage, Downloads): amber edge, 3px left bar, tint, rounded
+- [x] Library grid tiles top-aligned (captions of different length no longer stagger rows)
+- [x] Accounts "This is you…" muted like the role note
+- [x] Audit text filters labelled (`aria-label`); dead `var(--x, #fallback)` colours removed
