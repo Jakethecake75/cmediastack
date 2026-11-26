@@ -5765,6 +5765,33 @@ so this was read from the code.
 | A code entered after a rotation was due keeps the session | `api.TestACodeEnteredLateKeepsTheSession` — mutation-verified |
 | On a Tizen user agent, Down from the picture skips the seek bar to the controls, and a slider at the edge keeps its value | The headless-Chromium check of 7n, now twelve cases; three more mutations of `remote.js` each fail one |
 
+### Increment 7p — a design pass over the web interface, and states the screens can see ✅
+
+Five passes over every screen, at phone and desktop widths and in both
+themes, recorded in `DESIGN_LOOP.md` (the design system, a functionality
+checklist, and what each pass changed). The passes changed styles only, with
+two small exceptions in the script (the open settings tab is scrolled into
+view on a phone; a settings group's title and tabs share a wrapper so they wrap
+as one). What a stylesheet could not reach was then changed deliberately:
+[ADR-0081](docs/adr/0081-states-the-screens-can-see.md).
+
+| What | How |
+|---|---|
+| **Design** | One set of tokens in both bundles: contrast-checked status colours in the light theme, filled buttons and field edges at AA, hover and focus everywhere, one warning look, phone layouts for the bars, tabs, forms, posters and player |
+| **A title's tab** | A title's page and the player keep the tab they were opened from marked |
+| **Health** | The overall state, each log line and a failing check carry their level as a class and stand out |
+| **The theme button** | An action named by its label; no `aria-pressed` |
+| **Search** | Has a page heading |
+| **Absent episodes** | Missing, to air and announced are told apart; they are `aria-disabled`, not `disabled`, so a keyboard and the remote reach them, and they still start nothing |
+
+#### Verified
+
+| Claim | How it is established |
+|---|---|
+| Every screen, both widths, both themes, before and after each change | `scripts/screenshot.js`: a fresh instance in WSL, seeded with a library; the screenshot browser alone is given artwork, details and episodes |
+| Navigation, tabs, a form, the theme toggle and signing out still work; the five changes of ADR-0081 do what it says | The same script's browser checks, twelve of them, run on every pass; not in the tree's Go tests (ADR-0011: no JavaScript test runner) |
+| The templates and scripts still hold the web package's rules | `go test ./internal/web/` |
+
 ---
 
 ## Decisions locked
@@ -5848,6 +5875,7 @@ so this was read from the code.
 | 75 | An approved request adds its title and starts the search; a request may name seasons or episodes; a User may ask for a removal, approved only by somebody who may delete; Downloads stable; Clear; a theme switch | [0075](docs/adr/0075-requests-add-themselves-seasons-removals.md) |
 | 76 | Across filesystems an imported file is copied and the download's file becomes a link to it; a finished download never fetches again | [0076](docs/adr/0076-one-copy-seeded-from-the-library.md) |
 | 77 | Casting with Google's Cast sender: the Chromecast fetches the film by a link signed for one file and account | [0077](docs/adr/0077-casting-to-a-chromecast.md) |
+| 81 | A view that is not a tab keeps its tab marked; Health's states and log levels are classes; the theme button is an action; Search has a heading; an absent episode is `aria-disabled`, reachable, and says whether it is missing | [0081](docs/adr/0081-states-the-screens-can-see.md) |
 | 80 | The session cookie lasts to the session's end; 90 days unused or a year by default; film and picture requests never rotate the secret | [0080](docs/adr/0080-staying-signed-in.md) |
 | 79 | A Samsung television app that opens the server; the remote's keys in the web interface for every page, doing nothing off a television; one anonymous file the app loads, held to keys and focus | [0079](docs/adr/0079-a-samsung-television-app.md) |
 | 78 | A title has its own page, with the provider's details kept for a day and its backdrop and stills through the artwork cache; Home and the library are pictures; a season is a Season; requests approved before v0.5.0 are added by the approver's page | [0078](docs/adr/0078-a-title-has-a-page-and-home-shows-pictures.md) |

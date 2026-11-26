@@ -280,6 +280,30 @@ async function visit(page, url) {
     return r.left >= s.left && r.right <= s.right;
   });
   check(inView, 'subnav: open tab scrolled into view at 375px');
+  // ADR-0081: a title keeps the tab it was opened from; Health lines carry
+  // their level; an absent episode is reachable but does not play.
+  await visit(page, '/#library');
+  await page.click('.poster-grid .tile');
+  await shownView('title');
+  check(await page.getAttribute('#subnav [aria-current="page"]', 'data-target') === 'library',
+    'subnav: a title opened from Library keeps Library marked');
+  check(await page.getAttribute('#theme', 'aria-pressed') === null, 'theme: button is an action, no aria-pressed');
+  const series = media.filter((x) => x.kind === 'series').pop();
+  if (series) {
+    await visit(page, '/#title/' + series.id);
+    await page.waitForSelector('.tile.absent');
+    const absent = page.locator('.tile.absent.missing').first();
+    await absent.focus();
+    check(await absent.evaluate((b) => document.activeElement === b && !b.disabled &&
+      b.getAttribute('aria-disabled') === 'true'), 'episode: a missing one is focusable and aria-disabled');
+    const before = await page.evaluate(() => location.hash);
+    await absent.evaluate((b) => b.click()); // Playwright will not click aria-disabled itself
+    await page.waitForTimeout(300);
+    check(await page.evaluate(() => location.hash) === before, 'episode: a missing one does not play');
+  }
+  await visit(page, '/#health');
+  await page.waitForSelector('#logs-list .item');
+  check(await page.locator('#logs-list .item[class*="level-"]').count() > 0, 'health: log lines carry their level');
   await visit(page, '/#search');
   check(await shownView('find') === 'find', 'route: old #search opens Search');
   await page.click('#theme');

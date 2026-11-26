@@ -1300,8 +1300,8 @@ label.checkbox + .list { margin-top: 10px; }
 
 /* Episodes not on disk: the picture is dimmed, the caption stays readable;
  * a wide card's placeholder title would only repeat the caption. */
-.tile.absent[disabled] { opacity: 1; }
-.tile.absent .poster { opacity: 0.55; }
+/* The picture is dimmed, not the card: its focus ring stays full strength. */
+.tile.absent .poster > * { opacity: 0.55; }
 .tile.absent .tile-title { color: var(--muted); }
 .tile.wide .poster-none { visibility: hidden; }
 .tile.wide .tile-title { font-size: 15px; font-weight: 600; }
@@ -1336,3 +1336,23 @@ p.warn, .item.why, #backup-policy .why, #roots-list .why {
     mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent);
   }
 }
+
+/* --------------------------------------------------------------------------
+ * ADR-0081: states the screens can now see.
+ * ----------------------------------------------------------------------- */
+
+/* Health: the overall line and warning/error log lines stand out. */
+#health-summary.state-warn, #health-summary.state-fail {
+  max-width: none; padding: 10px 14px; border: 1px solid var(--warn); border-left-width: 3px;
+  border-radius: var(--radius); background: var(--warn-bg); color: var(--warn-text);
+}
+#health-summary.state-fail { border-color: var(--danger); background: var(--err-bg); color: var(--danger); }
+#logs-list .item.level-warn { border-left: 3px solid var(--warn); }
+#logs-list .item.level-error { border-left: 3px solid var(--danger); }
+
+/* Episodes not on disk: missing is a problem, to air and announced are not. */
+.tile.absent.missing .poster { box-shadow: inset 0 0 0 1px var(--warn); }
+.tile.absent.missing .tile-sub { color: var(--warn-text); }
+
+/* Search's heading sits above the bar like every other view's. */
+[data-view="find"] > h2 { margin-bottom: 16px; }

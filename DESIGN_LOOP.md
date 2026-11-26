@@ -94,16 +94,17 @@ Components
 
 (empty)
 
-## DEFERRED — needs a script or markup behaviour change (outside rule #1)
+## DEFERRED
 
-Each of these would change what a script does or add content, so the design
-loop leaves them for a deliberate change by the owner:
-- Title page: no Home/Library tab is marked while a title is open (keep the tab the person came from).
-- Health: "Overall: warn" and warn/error log records need a level class from JS to stand out.
-- Theme button: "Light mode" with `aria-pressed="true"` while dark is on reads inverted to screen readers.
-- Search has no page h2 (adding one adds content).
-- Episode cards: missing / to air / announced share one look (needs a state class from JS); missing episodes are `disabled`, so a keyboard or TV remote cannot reach them (`aria-disabled` would change behaviour).
-- Won't do: a badge that wraps to its own line keeps its 8px margin (cosmetic, phones only); role permission lists are ~1000px tall on phones (that is the content; columns are too narrow at 375); px/rem unification (no visible effect).
+Done after the loop, as [ADR-0081](docs/adr/0081-states-the-screens-can-see.md):
+the title page keeps its tab marked; Health's states and log levels stand out;
+the theme button has no `aria-pressed`; Search has an h2; absent episodes are
+told apart and reachable by keyboard and remote. `scripts/screenshot.js` checks
+each of them.
+
+Won't do: a badge that wraps to its own line keeps its 8px margin (cosmetic,
+phones only); role permission lists are ~1000px tall on phones (that is the
+content); px/rem unification (no visible effect).
 
 Not design (found while verifying, pre-existing, left alone): creating an API token
 with the form's default scopes as a fresh admin is refused with "requested scope

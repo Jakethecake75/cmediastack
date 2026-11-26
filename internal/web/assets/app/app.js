@@ -289,6 +289,10 @@
     }
   }
 
+  /* The tab last open in each section. A view that is not a tab (a title's
+   * page, the player) keeps the tab it was opened from marked (ADR-0081). */
+  var lastTab = {};
+
   /* Tabs merged into Search (ADR-0070); their old links open it. */
   var MERGED = { add: 'find', ask: 'find', search: 'find', requests: 'find', discover: 'find' };
 
@@ -320,7 +324,13 @@
         tabs[j].removeAttribute('aria-current');
       }
     }
-    buildSubnav(section, target);
+    var mark = target;
+    if ((viewOf(target) || {}).hidden) {
+      mark = lastTab[section] || (navViews().filter(function (v) { return v.section === section; })[0] || {}).id;
+    } else {
+      lastTab[section] = target;
+    }
+    buildSubnav(section, mark);
     /* A television's remote starts in the player on the picture (ADR-0079). */
     if (target === 'watch' && document.documentElement.classList.contains('tv')) { $('watch-player').focus(); }
     /* Pictures get the width of the window; forms keep a column (ADR-0078). */
@@ -1409,13 +1419,16 @@
     api('GET', '/health/detail').then(function (res) {
       if (res.status !== 200 || !res.body) { empty(list, failure(res, 'could not read the health report')); return; }
       var b = res.body;
+      /* The state as a class too, so a warning or failure stands out (ADR-0081). */
+      $('health-summary').classList.toggle('state-warn', b.state === 'warn');
+      $('health-summary').classList.toggle('state-fail', b.state === 'fail');
       $('health-summary').textContent = 'Overall: ' + b.state + ' · version ' + b.version +
         (b.schema_version ? ' · schema ' + b.schema_version : '') +
         ' · up ' + Math.round(b.uptime_seconds / 3600) + ' h';
       clear(list);
       b.checks.forEach(function (c) {
         var r = row(c.name, c.detail);
-        var cls = c.state === 'ok' ? 'badge good' : 'badge warn';
+        var cls = c.state === 'ok' ? 'badge good' : c.state === 'fail' ? 'badge bad' : 'badge warn';
         r.firstChild.appendChild(el('span', cls, c.state));
         list.appendChild(r);
       });
@@ -1435,6 +1448,7 @@
       res.body.records.forEach(function (rec) {
         var attrs = Object.keys(rec.attrs).map(function (k) { return k + '=' + rec.attrs[k]; }).join(' ');
         var r = row(rec.message, when(rec.time) + ' · ' + rec.level);
+        r.classList.add('level-' + String(rec.level).toLowerCase());
         if (attrs) { r.appendChild(el('div', 'muted small', attrs)); }
         list.appendChild(r);
       });
@@ -2192,11 +2206,13 @@
     }
     var place = going.filter(function (c) { return e.have && c.file_id === e.file_id; })[0];
     var t = tile(e.number + '. ' + (e.title || 'Episode ' + e.number), sub, e.still, function () {
-      watch(e.file_id, it.title + ' ' + episodeCode(e), it.year);
+      if (e.have) { watch(e.file_id, it.title + ' ' + episodeCode(e), it.year); }
     }, place && place.duration_ms ? place.position_ms / place.duration_ms : 0, true);
     if (!e.have) {
-      t.disabled = true;
-      t.classList.add('absent');
+      /* Not disabled: a keyboard or a remote can still reach it and read
+       * that it is missing or still to come (ADR-0081). */
+      t.setAttribute('aria-disabled', 'true');
+      t.classList.add('absent', e.announced ? 'announced' : sub === 'Missing' ? 'missing' : 'upcoming');
     }
     return t;
   }
@@ -6383,7 +6399,6 @@
     var show = function () {
       var light = document.documentElement.getAttribute('data-theme') === 'light';
       b.textContent = light ? 'Dark mode' : 'Light mode';
-      b.setAttribute('aria-pressed', light ? 'false' : 'true');
     };
     b.addEventListener('click', function () {
       var next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
