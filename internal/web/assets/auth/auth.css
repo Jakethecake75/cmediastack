@@ -17,6 +17,12 @@
   --danger: #ff6b6b;
   --ok: #5bd68a;
   --warn: #ffc857;
+  --surface-2: #242424;
+  /* Filled buttons: white text needs a deeper blue than links do (AA). */
+  --accent-strong: #2b6be0;
+  --accent-hover: #2560cc;
+  /* Form-field edges: 3:1 against the surface (WCAG 1.4.11). */
+  --field-line: #6b6b6b;
   --radius: 10px;
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -32,6 +38,14 @@
   --text: #1b2027;
   --muted: #5b6673;
   --accent: #1a5fd0;
+  --surface-2: #eef1f5;
+  --accent-strong: #1a5fd0;
+  --accent-hover: #164fae;
+  --field-line: #8a94a3;
+  /* Status colours dark enough to read on white. */
+  --danger: #c62828;
+  --ok: #1e7a44;
+  --warn: #8a5d12;
 }
 
 * { box-sizing: border-box; }
@@ -39,6 +53,9 @@
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   font-family: var(--font);
   font-size: 15px;
   line-height: 1.5;
@@ -46,8 +63,9 @@ body {
   color: var(--text);
 }
 
+/* The card centred in what the footer leaves, so no page scrolls. */
 .shell {
-  min-height: 100vh;
+  flex: 1 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -68,13 +86,13 @@ body {
 .brand {
   margin: 0 0 20px;
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.02em;
-  color: var(--muted);
+  color: var(--text);
   text-align: center;
 }
 
-h2 { margin: 0 0 8px; font-size: 20px; }
+h2 { margin: 0 0 8px; font-size: 22px; line-height: 1.25; }
 h3 { margin: 20px 0 8px; font-size: 15px; }
 
 label {
@@ -85,7 +103,7 @@ label {
   color: var(--muted);
 }
 
-.optional { font-weight: 400; opacity: 0.7; }
+.optional { font-weight: 400; }
 
 input[type="text"],
 input[type="email"],
@@ -96,14 +114,17 @@ textarea {
   font: inherit;
   color: var(--text);
   background: var(--bg);
-  border: 1px solid var(--line);
+  border: 1px solid var(--field-line);
   border-radius: 8px;
 }
 
 textarea { resize: vertical; }
 
+a { color: var(--accent); }
+
 input:focus-visible,
 textarea:focus-visible,
+summary:focus-visible,
 button:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--accent);
@@ -123,10 +144,12 @@ button[disabled] { opacity: 0.55; cursor: progress; }
 .primary {
   width: 100%;
   margin-top: 20px;
-  background: var(--accent);
+  background: var(--accent-strong);
   color: var(--accent-ink);
   font-weight: 600;
 }
+
+.primary:hover:not([disabled]) { background: var(--accent-hover); }
 
 .ghost {
   background: transparent;
@@ -135,21 +158,29 @@ button[disabled] { opacity: 0.55; cursor: progress; }
   padding: 6px 12px;
 }
 
+.ghost:hover:not([disabled]) { background: var(--surface-2); border-color: var(--muted); }
+
 .link {
   display: block;
   width: 100%;
   margin-top: 10px;
   background: none;
   border: none;
+  font-size: 13px;
   color: var(--muted);
   text-decoration: underline;
 }
 
+.link:hover { color: var(--text); }
+
 .hint {
   margin: 8px 0 0;
   font-size: 13px;
+  line-height: 1.55;
   color: var(--muted);
 }
+
+h2 + .hint { font-size: 14px; }
 
 .error, .ok, .warn {
   margin: 16px 0 0;
@@ -174,10 +205,14 @@ button[disabled] { opacity: 0.55; cursor: progress; }
 }
 
 .footer-links a, .footer-links button {
+  display: inline-block;
+  padding: 4px 0;
   color: var(--muted);
   width: auto;
   margin: 0;
 }
+
+.footer-links a:hover, .footer-links button:hover { color: var(--text); }
 
 .noscript {
   padding: 14px 16px;
@@ -249,7 +284,7 @@ code {
 
 .code-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 8px;
   margin: 14px 0 0;
   padding: 0;
@@ -273,6 +308,8 @@ code {
 }
 
 .row .primary, .row .ghost { margin-top: 0; }
+.row .primary { flex: 1; width: auto; }
+.row .ghost { flex: none; white-space: nowrap; padding: 10px 16px; }
 
 [hidden] { display: none !important; }
 
@@ -280,6 +317,6 @@ code {
 footer.source {
   text-align: center;
   font-size: 0.75rem;
-  opacity: 0.7;
+  color: var(--muted);
   padding: 1.5rem 1rem 1rem;
 }

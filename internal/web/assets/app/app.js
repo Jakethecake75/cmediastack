@@ -275,6 +275,9 @@
       b.addEventListener('click', function () { window.location.hash = '#' + v.id; });
       sub.appendChild(b);
     });
+    /* On a phone the tabs scroll sideways: bring the open one into view. */
+    var open = sub.querySelector('[aria-current="page"]');
+    if (open && sub.scrollWidth > sub.clientWidth) { sub.scrollLeft = open.offsetLeft - 16; }
   }
 
   /* Tabs merged into Search (ADR-0070); their old links open it. */

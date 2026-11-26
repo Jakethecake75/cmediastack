@@ -23,6 +23,14 @@
   --ok-bg: rgba(91, 214, 138, 0.18);
   --err-bg: rgba(255, 107, 107, 0.18);
   --warn-text: #ffc857;
+  --warn-bg: rgba(255, 200, 87, 0.16);
+  /* Filled buttons: white text needs a deeper blue than links do (AA). */
+  --accent-strong: #2b6be0;
+  --accent-hover: #2560cc;
+  /* Form-field edges: 3:1 against the surface (WCAG 1.4.11). */
+  --field-line: #6b6b6b;
+  /* Left and right padding of the bars, matching the wide views' gutter. */
+  --chrome-pad: clamp(16px, 4vw, 72px);
   --radius: 10px;
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -39,8 +47,16 @@
   --text: #1b2027;
   --muted: #5b6673;
   --accent: #1a5fd0;
+  --accent-strong: #1a5fd0;
+  --accent-hover: #164fae;
+  --field-line: #8a94a3;
+  /* Status colours dark enough to read on white. */
+  --danger: #c62828;
+  --ok: #1e7a44;
+  --warn: #8a5d12;
   --ok-bg: #dff0e4;
   --err-bg: #f6dede;
+  --warn-bg: #f7ecd6;
   --warn-text: #8a5d12;
 }
 
@@ -82,15 +98,15 @@ body {
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
-  padding: 12px 20px;
+  padding: 10px var(--chrome-pad);
   background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
 
 .brand-small {
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.02em;
-  color: var(--muted);
+  color: var(--text);
 }
 
 .nav { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -105,13 +121,17 @@ body {
   cursor: pointer;
 }
 
-.nav button:hover { color: var(--text); }
+.nav button:hover { color: var(--text); background: var(--surface-2); }
 
 .nav button[aria-current="page"] {
   color: var(--text);
+  font-weight: 600;
   background: var(--surface-2);
   border-color: var(--line);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
+
+.topbar .ghost { padding: 6px 12px; }
 
 .spacer { flex: 1 1 auto; }
 
@@ -132,10 +152,11 @@ body {
   padding-right: var(--gutter);
 }
 
-h2 { margin: 0 0 6px; font-size: 20px; }
-h3 { margin: 28px 0 8px; font-size: 15px; }
+h2 { margin: 0 0 8px; font-size: 24px; line-height: 1.25; }
+h3 { margin: 32px 0 8px; font-size: 17px; line-height: 1.3; }
 
-.hint { margin: 6px 0 18px; font-size: 13px; color: var(--muted); }
+.hint { margin: 6px 0 18px; max-width: 72ch; font-size: 14px; line-height: 1.55; color: var(--muted); }
+.view > h2 + .inline-form { margin-top: 18px; }
 
 /* --- feedback --------------------------------------------------------- */
 
@@ -204,6 +225,7 @@ h3 { margin: 28px 0 8px; font-size: 15px; }
 
 .empty {
   padding: 20px;
+  text-wrap: balance;
   text-align: center;
   color: var(--muted);
   border: 1px dashed var(--line);
@@ -212,19 +234,24 @@ h3 { margin: 28px 0 8px; font-size: 15px; }
 
 .badge {
   display: inline-block;
+  flex: 0 0 auto;
   padding: 1px 8px;
   margin-left: 8px;
   font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  vertical-align: 1px;
   border-radius: 999px;
   border: 1px solid var(--line);
+  background: var(--surface-2);
   color: var(--muted);
 }
 
-.badge.good { color: var(--ok); border-color: var(--ok); }
-.badge.bad { color: var(--danger); border-color: var(--danger); }
-.badge.warn { color: var(--warn); border-color: var(--warn); }
+.badge.good { color: var(--ok); border-color: var(--ok); background: var(--ok-bg); }
+.badge.bad { color: var(--danger); border-color: var(--danger); background: var(--err-bg); }
+.badge.warn { color: var(--warn-text); border-color: var(--warn); background: var(--warn-bg); }
 
 /* --- forms ------------------------------------------------------------ */
 
@@ -237,6 +264,12 @@ h3 { margin: 28px 0 8px; font-size: 15px; }
 }
 
 .inline-form h3 { margin-top: 0; }
+.inline-form > label:first-child, .inline-form > h3 + label { margin-top: 0; }
+/* Fields stack; a button never rides up beside the last one. */
+.inline-form > input, .inline-form > select, .inline-form > textarea { display: block; }
+.inline-form .hint { margin-bottom: 0; }
+.inline-form input[type="number"] { max-width: 10rem; }
+.list + .inline-form, .list + .actions + .inline-form { margin-top: 12px; }
 
 label {
   display: block;
@@ -269,11 +302,13 @@ select {
   font: inherit;
   color: var(--text);
   background: var(--bg);
-  border: 1px solid var(--line);
+  border: 1px solid var(--field-line);
   border-radius: 8px;
 }
 
-textarea { max-width: 640px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color: var(--accent); }
+
+textarea { max-width: 640px; font-family: var(--mono); font-size: 13px; }
 
 .item select, .item input { max-width: 220px; }
 
@@ -284,7 +319,8 @@ fieldset.perms {
   border-radius: 8px;
 }
 
-fieldset.perms legend { font-size: 13px; color: var(--muted); padding: 0 6px; }
+fieldset.perms legend { font-size: 13px; font-weight: 600; color: var(--muted); padding: 0 6px; }
+.inline-form fieldset.perms { max-width: 360px; }
 
 .perm-grid {
   display: grid;
@@ -315,9 +351,17 @@ button {
 
 button[disabled] { opacity: 0.55; cursor: progress; }
 
-.primary { margin-top: 16px; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.primary { margin-top: 16px; background: var(--accent-strong); color: var(--accent-ink); font-weight: 600; }
 .ghost { background: transparent; color: var(--text); border-color: var(--line); }
 .danger { margin-top: 16px; background: transparent; color: var(--danger); border-color: var(--danger); font-weight: 600; }
+/* A button given no style of its own is a plain secondary one, not the
+ * browser's grey. */
+button:where(:not([class]), [class=""]) { background: var(--surface-2); color: var(--text); border-color: var(--field-line); }
+
+.primary:hover:not([disabled]) { background: var(--accent-hover); }
+.ghost:hover:not([disabled]),
+button:where(:not([class]), [class=""]):hover:not([disabled]) { background: var(--surface-2); border-color: var(--muted); }
+.danger:hover:not([disabled]) { background: var(--err-bg); }
 
 .item .primary, .item .ghost, .item .danger { margin-top: 0; }
 
@@ -365,6 +409,8 @@ code { font-family: var(--mono); font-size: 0.92em; }
 
 input:focus-visible,
 select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
 button:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--accent);
@@ -406,7 +452,7 @@ a:focus-visible {
 }
 
 .fact { display: inline-flex; gap: 0.35rem; align-items: baseline; }
-.fact-label { font-size: 0.78rem; opacity: 0.62; }
+.fact-label { font-size: 0.78rem; color: var(--muted); }
 .fact-value { font-size: 0.86rem; }
 
 .why {
@@ -451,16 +497,6 @@ progress {
   align-items: baseline;
   font-size: 0.84rem;
   padding: 0.2rem 0;
-}
-
-.badge {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0.1rem 0.4rem;
-  border-radius: 3px;
-  background: var(--line, #ddd);
-  flex: 0 0 auto;
 }
 
 /* The audit log (ADR-0031): the action reads as the line's title, the
@@ -840,21 +876,22 @@ progress {
 footer.source {
   text-align: center;
   font-size: 0.75rem;
-  opacity: 0.7;
+  color: var(--muted);
   padding: 1.5rem 1rem 1rem;
 }
+footer.source a { color: var(--accent); }
 
 /* Sections (ADR-0069): the section's tabs under the top bar. */
 .subnav {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;
-  padding: 8px 20px; border-bottom: 1px solid var(--line); background: var(--surface);
+  padding: 8px var(--chrome-pad); border-bottom: 1px solid var(--line); background: var(--surface);
 }
 .subnav button {
   background: transparent; border: 1px solid transparent; color: var(--muted);
   padding: 4px 10px; border-radius: 999px; font-size: 13px; cursor: pointer;
 }
-.subnav button:hover { color: var(--text); }
-.subnav button[aria-current="page"] { color: var(--text); border-color: var(--line); background: var(--surface-2); }
+.subnav button:hover { color: var(--text); background: var(--surface-2); }
+.subnav button[aria-current="page"] { color: var(--accent); border-color: var(--accent); background: var(--surface-2); font-weight: 600; }
 .subnav-group {
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
   margin: 0 2px 0 10px;
@@ -985,3 +1022,74 @@ footer.source {
   .tile { flex-basis: 132px; }
   .tile.wide { flex-basis: 240px; }
 }
+
+/* --------------------------------------------------------------------------
+ * Design pass 1 (DESIGN_LOOP.md): layout fixes for shared pieces.
+ * ----------------------------------------------------------------------- */
+
+/* Rows of buttons directly under a view, not inside a card. */
+.view > .actions:not(:empty) { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+
+/* Toolbars: their labels and counts sit on the row, not 12px below it. */
+.toolbar label, .toolbar .hint { margin: 0; }
+.toolbar > select, .toolbar > input { flex: 1 1 12rem; max-width: none; width: auto; }
+.toolbar > button { margin-top: 0; }
+
+/* The log viewer's filter on one row. */
+#logs-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+#logs-form label { margin: 0; }
+#logs-form select { display: inline-block; width: auto; }
+#logs-form input { display: inline-block; flex: 1 1 12rem; max-width: none; }
+#logs-form .primary, #logs-form button { margin-top: 0; }
+#logs-list .item .title { font-weight: 500; font-size: 14px; }
+#logs-list .item > .muted.small { font-family: var(--mono); font-size: 12px; opacity: 1; color: var(--muted); overflow-wrap: anywhere; }
+
+/* A task's Run now beside it, not on a row of its own. */
+#tasks-list .item { display: grid; grid-template-columns: 1fr auto; column-gap: 16px; }
+#tasks-list .item > * { grid-column: 1; }
+#tasks-list .item > .actions { grid-column: 2; grid-row: 1 / span 3; margin-top: 0; align-self: start; }
+#tasks-list .item > .title { font-family: var(--mono); font-size: 14px; }
+
+/* Your account at a glance: one row on a wide window, two across on a phone. */
+#account-cards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 20px; }
+
+/* Choosing libraries and a rating ceiling: under the fields, the same width. */
+.access { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; max-width: 360px; }
+.access > .why, .access > .access-roots { grid-column: 1 / -1; }
+.access select { max-width: none; }
+.item .access { max-width: 460px; }
+
+/* A role's permissions: read down columns, ticked ones stand out. */
+.access-roots.permissions { display: block; columns: 220px 3; column-gap: 16px; max-width: none; }
+.access-roots.permissions label.checkbox, .perm-grid label {
+  margin: 0; padding: 3px 6px; border-radius: 6px; break-inside: avoid;
+}
+.access-roots.permissions label.checkbox { font-family: var(--mono); font-size: 12px; }
+.perm-grid { display: block; columns: 220px 3; column-gap: 16px; }
+label.checkbox:has(input:checked) { color: var(--text); }
+label.checkbox:has(input:disabled) { opacity: 0.6; }
+.access-roots.permissions label.checkbox:hover, .perm-grid label:hover { background: var(--surface-2); }
+
+/* Notification categories: the category name is the card's title. */
+.item > label.checkbox { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+
+@media (max-width: 640px) {
+  /* The bar in two rows: brand and buttons, then sections and who. */
+  .topbar { gap: 8px 10px; padding-top: 8px; padding-bottom: 8px; }
+  .spacer { order: 1; }
+  #theme { order: 2; }
+  #logout { order: 3; }
+  .nav { order: 4; }
+  .whoami { order: 5; margin-left: auto; }
+  /* The tabs scroll sideways rather than stacking six rows high. */
+  .subnav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .subnav > * { flex: none; }
+  .subnav button { padding: 7px 12px; }
+  .toolbar > button { flex: 1 1 100%; }
+  .access-roots.permissions label.checkbox { padding: 6px; }
+}
+
+/* The audit log: the outcome badge starts the line; trouble is marked at the edge. */
+.audit-line .title .badge { margin-left: 0; }
+.audit-line.denied { border-left: 3px solid var(--danger); }
+.audit-line.failure { border-left: 3px solid var(--warn); }

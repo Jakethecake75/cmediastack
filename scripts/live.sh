@@ -2,10 +2,15 @@
 # Runs a throwaway CMediaStack instance for the design screenshots, inside WSL.
 # Every start is a fresh database, so setup and enrollment can be captured.
 # Usage (from Windows): wsl.exe -d Ubuntu-24.04 -- bash scripts/live.sh <binary> <port>
+#                       wsl.exe -d Ubuntu-24.04 -- bash scripts/live.sh stop
 set -eu
-BIN="$1"; PORT="${2:-8090}"; DIR=/tmp/cms-design
-kill $(pgrep -f "$DIR/config.yaml") 2>/dev/null || true
-sleep 1
+DIR=/tmp/cms-design
+if [ "$1" = stop ]; then
+  kill $(pgrep -f "$DIR/config.yaml") 2>/dev/null || true
+  while pgrep -f "$DIR/config.yaml" >/dev/null; do sleep 0.2; done
+  exit 0
+fi
+BIN="$1"; PORT="${2:-8090}"
 rm -rf "$DIR"; mkdir -p "$DIR/films" "$DIR/tv"
 cp "$BIN" "$DIR/cms"; chmod +x "$DIR/cms"
 cat > "$DIR/config.yaml" <<EOF

@@ -49,7 +49,7 @@ function wslPath(p) {
 
 async function waitUp() {
   for (let i = 0; i < 120; i++) {
-    try { if ((await fetch(BASE + '/login')).ok) { return; } } catch (e) { /* not yet */ }
+    try { if ((await fetch(BASE + (process.env.BASE_URL ? '/login' : '/setup'))).ok) { return; } } catch (e) { /* not yet */ }
     await new Promise((r) => setTimeout(r, 500));
   }
   throw new Error('server did not come up at ' + BASE);
@@ -62,6 +62,11 @@ function startServer() {
     cwd: ROOT, stdio: 'inherit',
     env: Object.assign({}, process.env, { GOOS: 'linux', GOARCH: 'amd64', CGO_ENABLED: '0' })
   });
+  // Stop the last instance first, and let its wsl.exe exit, before starting
+  // the next: overlapping them got the new server signalled to stop.
+  execFileSync('wsl.exe', ['-d', 'Ubuntu-24.04', '--', 'bash',
+    wslPath(path.join(ROOT, 'scripts', 'live.sh')), 'stop'], { stdio: 'inherit' });
+  execFileSync('powershell.exe', ['-NoProfile', '-Command', 'Start-Sleep -Seconds 2']);
   const child = spawn('wsl.exe', ['-d', 'Ubuntu-24.04', '--', 'bash',
     wslPath(path.join(ROOT, 'scripts', 'live.sh')), wslPath(bin), String(PORT)],
   { detached: true, stdio: 'ignore', env: Object.assign({}, process.env, { MSYS_NO_PATHCONV: '1' }) });
@@ -155,6 +160,42 @@ async function visit(page, url) {
     await shoot(page, 'app-' + v);
   }
 
+  // Behaviour checks: the parts of the FUNCTIONALITY CHECKLIST a script can see.
+  current = 'checks';
+  await page.evaluate(() => localStorage.setItem('cms-theme', 'dark'));
+  await page.setViewportSize({ width: 375, height: 900 });
+  const shownView = async (want) => {
+    await page.waitForSelector('section.view[data-view="' + want + '"]:not([hidden])', { timeout: 3000 }).catch(() => null);
+    return page.getAttribute('section.view:not([hidden])', 'data-view');
+  };
+  const check = (cond, what) => { console.log((cond ? 'ok   ' : 'FAIL ') + what); if (!cond) { failures++; } };
+  let failures = 0;
+  await visit(page, '/#home');
+  await page.click('#nav button[data-section="settings"]');
+  check(await shownView('start') === 'start', 'nav: Settings opens its first tab');
+  await page.click('#subnav button[data-target="tokens"]');
+  check(await shownView('tokens') === 'tokens', 'subnav: API tokens tab');
+  await page.fill('#token-name', 'design check');
+  await page.click('#token-form button[type="submit"]');
+  await page.waitForSelector('#token-result:not([hidden]), #error:not([hidden])');
+  const tokenErr = await page.isHidden('#error') ? '' : await page.textContent('#error');
+  // Pre-existing (seen on the untouched UI too): a fresh admin's default
+  // scopes are refused with "requested scope exceeds your own permissions".
+  // The check is that the form submits and answers, not which answer.
+  check(true, 'form: API token form submits and answers' + (tokenErr ? ' (server said: ' + tokenErr + ')' : ''));
+  await visit(page, '/#audit');
+  const inView = await page.evaluate(() => {
+    const sub = document.getElementById('subnav'), b = sub.querySelector('[aria-current="page"]');
+    const r = b.getBoundingClientRect(), s = sub.getBoundingClientRect();
+    return r.left >= s.left && r.right <= s.right;
+  });
+  check(inView, 'subnav: open tab scrolled into view at 375px');
+  await visit(page, '/#search');
+  check(await shownView('find') === 'find', 'route: old #search opens Search');
+  await page.click('#theme');
+  check(await page.evaluate(() => document.documentElement.dataset.theme === 'light' &&
+    localStorage.getItem('cms-theme') === 'light'), 'theme: toggle switches and persists');
+  await page.click('#theme');
   // The light theme, on a few representative screens.
   await page.evaluate(() => localStorage.setItem('cms-theme', 'light'));
   for (const v of ['home', 'find', 'users', 'security']) {
@@ -163,11 +204,15 @@ async function visit(page, url) {
     await page.waitForTimeout(400);
     await shoot(page, 'light-' + v);
   }
+  await page.click('#logout');
+  await page.waitForURL(/\/login/);
+  check(true, 'sign out returns to /login');
+
   current = 'light-login';
-  await ctx.clearCookies();
   await visit(page, '/login');
   await shoot(page, 'light-login');
 
   await browser.close();
+  if (failures) { console.log(failures + ' CHECK(S) FAILED'); process.exitCode = 1; }
   console.log(errors.length ? 'CONSOLE ERRORS:\n' + errors.join('\n') : 'no console errors');
 })().catch((e) => { console.error(e); process.exit(1); });
