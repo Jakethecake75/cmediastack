@@ -1,3 +1,5 @@
+STATUS: COMPLETE (2026-11-25, after pass 5). Later runs make no changes.
+
 # Design loop
 
 Repeated visual design passes on the web interface. Rule #1: functionality does
@@ -90,7 +92,7 @@ Components
 
 ## DESIGN BACKLOG
 
-(empty — pass 5 is a verification pass: a whole-site review; if it finds nothing material, STATUS: COMPLETE)
+(empty)
 
 ## DEFERRED — needs a script or markup behaviour change (outside rule #1)
 
@@ -172,3 +174,10 @@ Pass 4 (2026-11-25)
 - [x] Library grid tiles top-aligned (captions of different length no longer stagger rows)
 - [x] Accounts "This is you…" muted like the role note
 - [x] Audit text filters labelled (`aria-label`); dead `var(--x, #fallback)` colours removed
+
+Pass 5 (2026-11-25) — verification
+- [x] Two whole-site reviews (signed-in app; sign-in pages + light theme): 3 material findings, all fixed
+- [x] Sign-in status boxes match the app's (padding, corners, warning bar; dark tints back in step with app.css)
+- [x] Phone settings tabs: scrolled from the open tab's group title (no title cut mid-word), edges fade to show the row scrolls
+- [x] Player message centred in its box when no list follows it
+- [x] Verified: behaviour checks pass, Go web tests pass, only the known server responses in the console (Downloads 501, placeholder video 500, API-token 403)

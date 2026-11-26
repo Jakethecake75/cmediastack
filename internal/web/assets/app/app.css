@@ -1324,3 +1324,15 @@ p.warn, .item.why, #backup-policy .why, #roots-list .why {
 
 /* Accounts: "This is you…" informs; it is not a warning. */
 #users-list .why { color: var(--muted); }
+
+/* The player's message is centred in its box when no list follows it. */
+.pl-message .list:empty { display: none; }
+
+@media (max-width: 640px) {
+  /* The sideways-scrolling tabs fade at the edges: nothing is cut mid-word,
+   * and the fade says there is more. */
+  .subnav {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+  }
+}

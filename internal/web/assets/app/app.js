@@ -281,7 +281,12 @@
     });
     /* On a phone the tabs scroll sideways: bring the open one into view. */
     var open = sub.querySelector('[aria-current="page"]');
-    if (open && sub.scrollWidth > sub.clientWidth) { sub.scrollLeft = open.offsetLeft - 16; }
+    if (open && sub.scrollWidth > sub.clientWidth) {
+      /* From its group's title, unless that leaves the tab itself off-screen. */
+      var from = (open.parentNode === sub ? open : open.parentNode).offsetLeft - 16;
+      if (open.offsetLeft + open.offsetWidth + 16 - from > sub.clientWidth) { from = open.offsetLeft - 16; }
+      sub.scrollLeft = from;
+    }
   }
 
   /* Tabs merged into Search (ADR-0070); their old links open it. */

@@ -17,9 +17,9 @@
   --danger: #ff6b6b;
   --ok: #5bd68a;
   --warn: #ffc857;
-  --ok-bg: rgba(91, 214, 138, 0.12);
-  --err-bg: rgba(255, 107, 107, 0.12);
-  --warn-bg: rgba(255, 200, 87, 0.12);
+  --ok-bg: rgba(91, 214, 138, 0.18);
+  --err-bg: rgba(255, 107, 107, 0.18);
+  --warn-bg: rgba(255, 200, 87, 0.16);
   --surface-2: #242424;
   /* Filled buttons: white text needs a deeper blue than links do (AA). */
   --accent-strong: #2b6be0;
@@ -348,3 +348,7 @@ footer.source {
 :root[data-theme="light"] :is(input[type="text"], input[type="email"], input[type="password"], textarea) {
   background: var(--surface);
 }
+
+/* The app's status boxes: same padding and corners; a warning has the bar. */
+.error, .ok, .warn { padding: 10px 14px; border-radius: var(--radius); }
+.warn { border-left-width: 3px; }
