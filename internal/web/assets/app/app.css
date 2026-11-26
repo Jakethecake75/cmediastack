@@ -352,7 +352,7 @@ button {
 button[disabled] { opacity: 0.55; cursor: progress; }
 
 .primary { margin-top: 16px; background: var(--accent-strong); color: var(--accent-ink); font-weight: 600; }
-.ghost { background: transparent; color: var(--text); border-color: var(--line); }
+.ghost { background: transparent; color: var(--text); border-color: var(--field-line); }
 .danger { margin-top: 16px; background: transparent; color: var(--danger); border-color: var(--danger); font-weight: 600; }
 /* A button given no style of its own is a plain secondary one, not the
  * browser's grey. */
@@ -891,20 +891,22 @@ footer.source a { color: var(--accent); }
   padding: 4px 10px; border-radius: 999px; font-size: 13px; cursor: pointer;
 }
 .subnav button:hover { color: var(--text); background: var(--surface-2); }
-.subnav button[aria-current="page"] { color: var(--accent); border-color: var(--accent); background: var(--surface-2); font-weight: 600; }
+.subnav button[aria-current="page"] { color: var(--accent); border-color: var(--accent); background: var(--surface-2); }
 .subnav-group {
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
-  margin: 0 2px 0 10px;
+  margin: 0 2px 0 0;
 }
-.subnav-group:first-child { margin-left: 0; }
+/* A group: its title and tabs together, divided from the next by a rule. */
+.subnav-set { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: 4px 6px; }
+.subnav:has(.subnav-set) { column-gap: 22px; }
 
 /* Rows of pictures: Home's, and a series' seasons. */
-.shelf { margin: 8px 0 34px; }
-.shelf h3 { margin: 0 0 12px; font-size: 22px; font-weight: 600; }
+.shelf { margin: 8px 0 32px; }
+.shelf h3 { margin: 0 0 12px; font-size: 20px; font-weight: 600; }
 .shelf-more { padding: 0; border: 0; background: none; color: inherit; font-weight: inherit; }
 .shelf-more:hover { color: var(--accent); }
 .shelf-row {
-  display: flex; gap: 18px; overflow-x: auto; scroll-snap-type: x proximity;
+  display: flex; gap: 16px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding-inline: 4px;
   /* Room for a tile's focus ring, which the scroller would otherwise clip. */
   padding: 4px 4px 12px; margin: 0 -4px;
 }
@@ -915,9 +917,10 @@ footer.source a { color: var(--accent); }
 }
 /* A landscape card: a backdrop, or an episode's still. */
 .tile.wide { flex-basis: 300px; }
-.tile .poster { position: relative; width: 100%; height: auto; aspect-ratio: 2 / 3; border-radius: 8px; }
+.tile .poster { position: relative; width: 100%; height: auto; aspect-ratio: 2 / 3; border-radius: var(--radius); }
 .tile.wide .poster { aspect-ratio: 16 / 9; }
-.tile:hover .poster, .tile:focus-visible .poster { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tile:hover .poster { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 2px; }
+.tile:focus-visible .poster { outline: 3px solid var(--accent); outline-offset: 2px; }
 .tile:focus-visible { outline: none; }
 /* An episode that is not on disk: there, and not playable. */
 .tile.absent { cursor: default; }
@@ -958,7 +961,7 @@ footer.source a { color: var(--accent); }
 .find-term input { width: 100%; max-width: none; }
 #find-year { width: 6.5rem; }
 .poster-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 24px 18px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 24px 16px;
 }
 .poster-grid > .empty { grid-column: 1 / -1; }
 .tile.chosen .poster { outline: 3px solid var(--accent); outline-offset: 2px; }
@@ -974,7 +977,7 @@ footer.source a { color: var(--accent); }
 #find-requests { margin-top: 28px; }
 @media (max-width: 640px) {
   .find-detail-head .poster { flex-basis: 96px; width: 96px; }
-  .poster-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 16px 12px; }
+  .poster-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 16px 12px; }
 }
 .ask-words { margin: 14px 0 22px; }
 .ask-words summary { cursor: pointer; color: var(--accent); font-weight: 600; margin-bottom: 10px; }
@@ -1013,7 +1016,8 @@ footer.source a { color: var(--accent); }
 .tp-meta:empty, .tp-next:empty, .tp-tagline:empty, .tp-overview:empty { display: none; }
 .tp-seasons { position: relative; margin-top: 40px; }
 .tp-manage { position: relative; margin-top: 12px; padding-top: 16px; border-top: 1px solid var(--line); }
-.tp-manage > summary { margin-bottom: 14px; font-size: 16px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.tp-manage > summary { font-size: 17px; font-weight: 600; color: var(--text); cursor: pointer; }
+.tp-manage[open] > summary { margin-bottom: 14px; }
 .tp-manage > summary:hover, .tp-manage[open] > summary { color: var(--text); }
 .tp-manage > .list { max-width: 940px; }
 @media (max-width: 640px) {
@@ -1066,8 +1070,11 @@ footer.source a { color: var(--accent); }
 }
 .access-roots.permissions label.checkbox { font-family: var(--mono); font-size: 12px; }
 .perm-grid { display: block; columns: 220px 3; column-gap: 16px; }
-label.checkbox:has(input:checked) { color: var(--text); }
-label.checkbox:has(input:disabled) { opacity: 0.6; }
+/* Options read in full colour; only a role's unticked permissions are
+ * dimmed, and a locked box is dimmed while its reason stays readable. */
+label.checkbox { color: var(--text); }
+.access-roots.permissions label.checkbox:not(:has(input:checked)) { color: var(--muted); }
+label.checkbox input:disabled { opacity: 0.5; }
 .access-roots.permissions label.checkbox:hover, .perm-grid label:hover { background: var(--surface-2); }
 
 /* Notification categories: the category name is the card's title. */
@@ -1076,7 +1083,7 @@ label.checkbox:has(input:disabled) { opacity: 0.6; }
 @media (max-width: 640px) {
   /* The bar in two rows: brand and buttons, then sections and who. */
   .topbar { gap: 8px 10px; padding-top: 8px; padding-bottom: 8px; }
-  .spacer { order: 1; }
+  .topbar .spacer { order: 1; }
   #theme { order: 2; }
   #logout { order: 3; }
   .nav { order: 4; }
@@ -1093,3 +1100,114 @@ label.checkbox:has(input:disabled) { opacity: 0.6; }
 .audit-line .title .badge { margin-left: 0; }
 .audit-line.denied { border-left: 3px solid var(--danger); }
 .audit-line.failure { border-left: 3px solid var(--warn); }
+
+/* --------------------------------------------------------------------------
+ * Design pass 2 (DESIGN_LOOP.md).
+ * ----------------------------------------------------------------------- */
+
+/* The footer at the foot of the window on a short page. */
+body { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+footer.source { margin-top: auto; }
+
+/* A missing picture: a quiet tinted card with the title set like a cover. */
+.poster:has(> .poster-none) {
+  background: linear-gradient(160deg, var(--surface-2), var(--surface));
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.tile .poster-none, .tp-poster .poster-none {
+  font-size: 15px; font-weight: 600; line-height: 1.3; padding: 12px;
+  text-wrap: balance; color: var(--muted);
+}
+.tp-poster .poster-none { font-size: 20px; }
+/* With no picture the title page leads with the title, not an empty box. */
+.tp-poster:has(> .poster-none) {
+  flex-basis: clamp(120px, 14vw, 200px); width: clamp(120px, 14vw, 200px); box-shadow: none;
+}
+
+/* Library: a filter bar, not a stretched form. */
+#library-kind { flex: 0 0 auto; }
+#library-filter { flex: 0 1 22rem; }
+[data-view="library"] .toolbar { margin: 16px 0 24px; }
+
+/* Warnings that are states, not help text. */
+p.warn {
+  padding: 10px 14px; border: 1px solid var(--warn); border-radius: var(--radius);
+  background: var(--warn-bg); color: var(--warn-text); font-size: 14px;
+}
+.item.why { border-left: 3px solid var(--warn); background: var(--warn-bg); }
+#backup-policy .why { margin-top: 8px; padding: 8px 12px; border-left: 3px solid var(--warn); background: var(--warn-bg); }
+#wanted-automatic:not(:empty) {
+  max-width: none; padding: 10px 14px; color: var(--text);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+}
+/* Downloads with the engine off: say so as a problem, and drop the empty
+ * "Finished" heading under it. */
+#queue-list:has(~ #queue-done:empty) > .empty {
+  border: 1px solid var(--warn); border-left-width: 3px; background: var(--warn-bg);
+  color: var(--warn-text); text-align: left; text-wrap: pretty;
+}
+[data-view="queue"] h3:has(+ #queue-done:empty) { display: none; }
+.empty::first-letter { text-transform: uppercase; }
+
+/* Health and tasks: trouble is marked at the card's edge, not only by a badge. */
+#health-list .item:has(.badge.warn), #tasks-list .item:has(.badge.warn) { border-left: 3px solid var(--warn); }
+#health-list .item:has(.badge.bad), #tasks-list .item:has(.badge.bad) { border-left: 3px solid var(--danger); }
+#health-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+
+/* Notes that inform rather than warn. */
+#roles-list .why { color: var(--muted); }
+.access > .why { margin: 8px 0 0; }
+.access + .hint { margin-top: 12px; }
+
+/* Getting started: only the first step still to do is the call to action. */
+#start-steps .item:has(.badge.warn) ~ .item:has(.badge.warn) .primary {
+  background: transparent; color: var(--text); border-color: var(--field-line); font-weight: 400;
+}
+#start-steps .item:has(.badge.warn) ~ .item:has(.badge.warn) .primary:hover:not([disabled]) { background: var(--surface-2); }
+
+/* Status cards line up with the form card's fields. */
+.list.compact { gap: 6px; }
+.list.compact .item { padding: 10px 16px; }
+
+/* Spacing between pieces that touched. */
+.inline-form .hint { max-width: 60ch; }
+#notifications-categories > .list + button { margin-top: 12px; }
+#backup-list + .hint { margin-top: 24px; }
+.view > h2 + h3 { margin-top: 16px; }
+label.checkbox + .list { margin-top: 10px; }
+.ask-words summary:hover { text-decoration: underline; }
+
+/* API token scopes in columns, like a role's permissions. */
+#token-form fieldset.perms { max-width: none; }
+
+/* Search bar: controls one height, so the labels line up. */
+.find-bar input, .find-bar select { height: 40px; }
+
+/* Audit filters: two fields a row, Show beside them, styled like Health's Show. */
+#audit-filter { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px 12px; align-items: center; }
+#audit-filter > select, #audit-filter > input { width: 100%; max-width: none; }
+#audit-filter > #audit-outcome { grid-column: 2 / -1; }
+#audit-filter > button { background: var(--accent-strong); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+#audit-filter > button:hover:not([disabled]) { background: var(--accent-hover); }
+
+@media (max-width: 640px) {
+  /* Phones zoom into any field under 16px; keep them at 16. */
+  input[type="text"], input[type="search"], input[type="number"], input[type="email"],
+  input[type="password"], input[type="url"], textarea, select { font-size: 16px; }
+  /* The bars and the wide views share one gutter. */
+  .content.wide { --gutter: var(--chrome-pad); }
+  .tp-poster:has(> .poster-none) { width: 30vw; }
+  /* Tasks: Run now stays on the name's row; the text below gets the width. */
+  #tasks-list .item > .meta { grid-column: 1 / -1; }
+  #tasks-list .item > .actions { grid-row: 1; align-self: center; }
+  /* Log filter: label and field side by side. */
+  #logs-form { display: grid; grid-template-columns: auto 1fr; align-items: center; }
+  #logs-form select { width: 100%; max-width: none; }
+  #logs-form button { grid-column: 1 / -1; }
+  #audit-filter { grid-template-columns: 1fr; }
+  #audit-filter > #audit-outcome { grid-column: auto; }
+  .find-field:not(#find-year-field) { flex: 1 1 100%; }
+  .find-bar select { max-width: none; }
+  /* Five account cards: the odd one out spans the row. */
+  #account-cards > .stat:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}

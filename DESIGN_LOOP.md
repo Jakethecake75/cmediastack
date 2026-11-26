@@ -92,18 +92,14 @@ Components
 
 Priority order. (H) high, (M) medium, (L) low.
 
-1. (H) Seed a demo library in `scripts/screenshot.js` (root folders + titles with artwork, a request, an issue, a pending signup, an invite) so Home, Library, Title, Watch, Approvals and Invites can be audited with real content instead of empty states.
-2. (M) Getting started: six equal blue "Set it up" buttons; make the not-yet-current steps secondary so the next step stands out.
-3. (M) Accounts: neutral notes ("This is you…", "Holds every permission, always.") use warning amber `.why`; decide which `.why` lines are cautions and tone the informational ones to muted.
-4. (M) Health and Tasks: a failing/warn card is marked only by a small badge; add an edge marker (e.g. `:has(.badge.warn)`), and make "Overall: warn" stand out (needs a class from JS).
-5. (M) Network: the "Egress is NOT being enforced" warning card looks like the status cards around it; give it the warn edge.
-6. (L) Downloads: the "Finished" heading is left with nothing under it when the queue API fails (501 today).
-7. (L) Theme button: says "Light mode" with `aria-pressed="true"` while dark is on; screen readers announce it inverted. Script/markup change: needs care under rule #1.
-8. (L) Search has no page h2, unlike Library/Downloads/Wanted.
-9. (L) Enroll: the QR and manual-entry box are indented by the step list's padding, so the QR is not centred on the card.
-10. (L) Network "Per subsystem": six one-line cards are tall; Identify's "Run a pass now" sits far right while other views' actions sit left.
-11. (L) Accounts on phones: each role's permission list is ~1000px tall; consider two columns at 375 or a collapsible list.
-12. (L) app.css mixes px and rem and several radii; fold remaining literals into the scale above.
+1. (M) Title page: neither Home nor Library tab is marked while a title is open, so the person loses their place. Needs a script change (keep the tab they came from); weigh against rule #1.
+2. (M) The player (watch view) and a title page with artwork, overview and seasons are still unseen: the seed has no provider data. Seed artwork/overview the way increment 7m did (sqlite + PNGs under `<db dir>/artwork/`) to audit them.
+3. (L) Health: "Overall: warn" is plain text and log records of level warn/error look like info ones; both need a class from JS.
+4. (L) Theme button says "Light mode" with `aria-pressed="true"` while dark is on; screen readers announce it inverted. Script/markup change.
+5. (L) Search has no page h2, unlike Library/Downloads/Wanted (adding one adds content).
+6. (L) Audit filters `#audit-actor`/`#audit-text` have only placeholders as labels; an `aria-label` attribute would fix it (markup).
+7. (L) Accounts on phones: each role's permission list is ~1000px tall.
+8. (L) app.css mixes px and rem and several radii; fold remaining literals into the scale.
 
 Not design (found while verifying, pre-existing, left alone): creating an API token
 with the form's default scopes as a fresh admin is refused with "requested scope
@@ -133,3 +129,21 @@ Pass 1 (2026-11-25), commit "style: design pass 1 …"
 - [x] Audit log: denied/failure lines marked at the left edge; badge flush left
 - [x] Footer: themed colour and link colour (was browser purple); auth pages no longer scroll by the footer
 - [x] Auth: "Copy all" no longer wraps; recovery codes two-up on phones; footer links bigger targets; brand full contrast; "optional" readable
+
+Pass 2 (2026-11-25)
+- [x] Screenshot seed: 6 films + 2 series (placeholder files, scanned); film and series title pages shot
+- [x] Fixed what pass 1 worsened: locked permission reasons readable (only the box dims); unticked options no longer look disabled outside role lists; odd account card spans the row on phones; Tasks on phones keep full-width text
+- [x] Missing-picture posters: tinted card, title set like a cover, hidden from screen readers (caption says it); title page shrinks the empty poster so the title leads
+- [x] Phone gutter shared by bars and wide views; shelf/grid values on the scale; tiles: hover lighter than keyboard focus
+- [x] Library toolbar sized like a filter bar; "Files and options" no longer looks disabled
+- [x] Settings tabs: each group (title + tabs) wraps as one; no width jump on the open tab
+- [x] Warnings as states: Search warning, Downloads engine-off, Network/Backups warnings, Wanted automatic line; empty "Finished" heading hidden
+- [x] Health/Tasks: trouble marked at the card edge; health checks in a grid
+- [x] Getting started: only the first step to do is the blue call to action
+- [x] Role "Holds every permission" note muted (information, not warning); ceiling caution spaced from the next hint
+- [x] Audit filters on a grid with a primary Show (matches Health); Health log filter tidy on phones; Search fields even on phones, controls one height
+- [x] Footer sits at the window's foot on short pages; spacing fixes (notification Save, backups note, Downloads headings, resolved-issues checkbox)
+- [x] Fields 16px on phones (no zoom on focus), app and sign-in pages
+- [x] Sign-in pages: hints 14px, code fields in mono, recovery codes 5 across on desktop, QR centred on the card, manual-entry hover
+- [x] Backlog done: Getting started (#2), Accounts notes (#3), Health/Tasks edge (#4), Network warning (#5), Downloads heading (#6), Enroll QR (#9), compact lists (#10)
+- [x] Won't do: Identify's "Run a pass now" on the right is a normal count-left/action-right toolbar

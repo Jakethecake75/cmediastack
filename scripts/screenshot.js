@@ -150,6 +150,13 @@ async function visit(page, url) {
   current = 'seed';
   await visit(page, '/');
   await api(page, 'POST', '/api/v1/invites', { note: 'For the family' });
+  for (const [kind, dir, label] of [['movies', 'films', 'Films'], ['series', 'tv', 'Series']]) {
+    r = await api(page, 'POST', '/api/v1/admin/rootfolders', { path: '/tmp/cms-design/' + dir, kind, label });
+    if (r.body && r.body.id) {
+      const sc = await api(page, 'POST', '/api/v1/admin/rootfolders/' + r.body.id + '/scan');
+      console.log('seed', dir, sc.status, JSON.stringify(sc.body).slice(0, 160));
+    } else { console.log('seed root', dir, r.status, JSON.stringify(r.body)); }
+  }
 
   for (const v of VIEWS) {
     current = v;
@@ -158,6 +165,17 @@ async function visit(page, url) {
     const shown = await page.getAttribute('section.view:not([hidden])', 'data-view').catch(() => null);
     if (shown !== v) { console.log('skip', v, '(app showed', shown + ')'); continue; }
     await shoot(page, 'app-' + v);
+  }
+
+  // A film's page and a series' page.
+  const media = ((await api(page, 'GET', '/api/v1/media')).body || {}).items || [];
+  for (const kind of ['movie', 'series']) {
+    const m = media.find((x) => x.kind === kind);
+    if (!m) { console.log('skip title-' + kind + ' (none in the library)'); continue; }
+    current = 'title-' + kind;
+    await visit(page, '/#title/' + m.id);
+    await page.waitForTimeout(600);
+    await shoot(page, 'app-title-' + kind);
   }
 
   // Behaviour checks: the parts of the FUNCTIONALITY CHECKLIST a script can see.

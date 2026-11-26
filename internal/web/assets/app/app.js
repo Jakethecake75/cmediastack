@@ -263,17 +263,21 @@
     var sub = $('subnav');
     clear(sub);
     var group = null;
+    /* A group's title and its tabs share a box, so they wrap as one. */
+    var set = sub;
     navViews().filter(function (v) { return v.section === sectionId; }).forEach(function (v) {
       if (v.group && v.group !== group) {
         group = v.group;
-        sub.appendChild(el('span', 'subnav-group', group));
+        set = el('span', 'subnav-set');
+        sub.appendChild(set);
+        set.appendChild(el('span', 'subnav-group', group));
       }
       var b = el('button', null, v.label);
       b.type = 'button';
       b.setAttribute('data-target', v.id);
       if (v.id === target) { b.setAttribute('aria-current', 'page'); }
       b.addEventListener('click', function () { window.location.hash = '#' + v.id; });
-      sub.appendChild(b);
+      set.appendChild(b);
     });
     /* On a phone the tabs scroll sideways: bring the open one into view. */
     var open = sub.querySelector('[aria-current="page"]');
@@ -364,6 +368,13 @@
    * fallback is tried before giving up: a backdrop falls back to the poster. */
   function posterArt(title, poster, fallback) {
     var art = el('div', 'poster');
+    /* The title stands in for a missing picture; the caption beside it
+     * already says it to a screen reader, so it is not said twice. */
+    var hiddenTitle = function () {
+      var t = el('div', 'poster-none', title);
+      t.setAttribute('aria-hidden', 'true');
+      return t;
+    };
     var first = poster || fallback;
     if (first) {
       var img = document.createElement('img');
@@ -372,11 +383,11 @@
       img.loading = 'lazy';
       img.addEventListener('error', function () {
         if (fallback && fallback !== first) { first = img.src = fallback; return; }
-        art.replaceChild(el('div', 'poster-none', title), img);
+        art.replaceChild(hiddenTitle(), img);
       });
       art.appendChild(img);
     } else {
-      art.appendChild(el('div', 'poster-none', title));
+      art.appendChild(hiddenTitle());
     }
     return art;
   }

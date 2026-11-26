@@ -13,6 +13,16 @@ fi
 BIN="$1"; PORT="${2:-8090}"
 rm -rf "$DIR"; mkdir -p "$DIR/films" "$DIR/tv"
 cp "$BIN" "$DIR/cms"; chmod +x "$DIR/cms"
+# A small library for the screens to show: sparse files over the 8 MiB
+# sample threshold, named the way a scan expects.
+for t in "The Long Way Home (2019)" "Northern Lights (2021)" "Paper Moon Harbour (1998)"          "A Quiet Engine (2024)" "Salt and Ember (2016)" "The Cartographer (2011)"; do
+  mkdir -p "$DIR/films/$t"; truncate -s 20M "$DIR/films/$t/$t.mkv"
+done
+for t in "Harbour Lights (2022)" "Field Notes (2019)"; do
+  for e in 01 02 03; do
+    mkdir -p "$DIR/tv/$t/Season 01"; truncate -s 20M "$DIR/tv/$t/Season 01/${t% (*} - S01E$e.mkv"
+  done
+done
 cat > "$DIR/config.yaml" <<EOF
 server:
   addr: "127.0.0.1:$PORT"

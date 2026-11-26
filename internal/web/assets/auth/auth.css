@@ -175,12 +175,11 @@ button[disabled] { opacity: 0.55; cursor: progress; }
 
 .hint {
   margin: 8px 0 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.55;
   color: var(--muted);
 }
 
-h2 + .hint { font-size: 14px; }
 
 .error, .ok, .warn {
   margin: 16px 0 0;
@@ -229,7 +228,8 @@ h2 + .hint { font-size: 14px; }
 .qr-wrap {
   display: flex;
   justify-content: center;
-  margin: 14px 0 10px;
+  /* Centred on the card, not on the indented step it belongs to. */
+  margin: 14px 0 10px -20px;
 }
 
 /* A white plate behind the code: a dark-mode page would otherwise invert the
@@ -256,6 +256,8 @@ details#manual summary {
   font-size: 13px;
   color: var(--muted);
 }
+
+details#manual summary:hover { color: var(--text); }
 
 .secret-row {
   display: flex;
@@ -319,4 +321,18 @@ footer.source {
   font-size: 0.75rem;
   color: var(--muted);
   padding: 1.5rem 1rem 1rem;
+}
+
+/* The one-time code reads like a code. */
+#code { font-family: var(--mono); letter-spacing: 0.15em; }
+
+/* Ten recovery codes, two rows of five on a wide card. */
+@media (min-width: 600px) {
+  .card.wide .code-list { grid-template-columns: repeat(5, 1fr); }
+  .card.wide .code-list li { padding: 8px 4px; }
+}
+
+/* Phones zoom into any field under 16px; keep them at 16. */
+@media (max-width: 640px) {
+  input[type="text"], input[type="email"], input[type="password"], textarea { font-size: 16px; }
 }
